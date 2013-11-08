@@ -462,8 +462,8 @@ function create_swift_disk() {
         node_device=${node}/sdb1
         [[ -d $node ]] && continue
         [[ -d $drive ]] && continue
-        sudo install -o ${USER} -g $USER_GROUP -d $drive
-        sudo install -o ${USER} -g $USER_GROUP -d $node_device
+        sudo install -o ${USER} -g $USER_GROUP -D $drive
+        sudo install -o ${USER} -g $USER_GROUP -D $node_device
         sudo chown -R $USER: ${node}
     done
 }

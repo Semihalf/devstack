@@ -131,7 +131,7 @@ disable_negated_services
 
 # Warn users who aren't on an explicitly supported distro, but allow them to
 # override check and attempt installation with ``FORCE=yes ./stack``
-if [[ ! ${DISTRO} =~ (oneiric|precise|quantal|raring|saucy|trusty|7.0|wheezy|sid|testing|jessie|f16|f17|f18|f19|opensuse-12.2|rhel6) ]]; then
+if [[ ! ${DISTRO} =~ (oneiric|precise|quantal|raring|saucy|trusty|7.0|wheezy|sid|testing|jessie|f16|f17|f18|f19|freebsd11|opensuse-12.2|rhel6) ]]; then
     echo "WARNING: this script has not been tested on $DISTRO"
     if [[ "$FORCE" != "yes" ]]; then
         die $LINENO "If you wish to run this script anyway run with FORCE=yes"
@@ -207,27 +207,35 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 
+if [[ $(whoami) != $STACK_USER ]]; then
+    err "Current user: $(whoami).  Expected: $STACK_USER. Please do 'su - $STACK_USER' and rerun."
+fi
+
+# XXX this is inherently broken: if we are not root and not in sudoers already
+# modifying /etc/... will fail due to no access.  Installing sudo by non
+# privileged user will also fail etc.
+
 # We're not **root**, make sure ``sudo`` is available
-is_package_installed sudo || install_package sudo
-
-# UEC images ``/etc/sudoers`` does not have a ``#includedir``, add one
-sudo grep -q "^#includedir.*/etc/sudoers.d" /etc/sudoers ||
-    echo "#includedir /etc/sudoers.d" | sudo tee -a /etc/sudoers
-
-# Set up devstack sudoers
-TEMPFILE=`mktemp`
-echo "$STACK_USER ALL=(root) NOPASSWD:ALL" >$TEMPFILE
-# Some binaries might be under /sbin or /usr/sbin, so make sure sudo will
-# see them by forcing PATH
-echo "Defaults:$STACK_USER secure_path=/sbin:/usr/sbin:/usr/bin:/bin:/usr/local/sbin:/usr/local/bin" >> $TEMPFILE
-chmod 0440 $TEMPFILE
-sudo chown root:root $TEMPFILE
-sudo mv $TEMPFILE /etc/sudoers.d/50_stack_sh
-
+#is_package_installed sudo || install_package sudo
+#
+## UEC images ``/etc/sudoers`` does not have a ``#includedir``, add one
+#sudo grep -q "^#includedir.*/etc/sudoers.d" /etc/sudoers ||
+#    echo "#includedir /etc/sudoers.d" | sudo tee -a /etc/sudoers
+#
+## Set up devstack sudoers
+#TEMPFILE=`mktemp`
+#echo "$STACK_USER ALL=(root) NOPASSWD:ALL" >$TEMPFILE
+## Some binaries might be under /sbin or /usr/sbin, so make sure sudo will
+## see them by forcing PATH
+#echo "Defaults:$STACK_USER secure_path=/sbin:/usr/sbin:/usr/bin:/bin:/usr/local/sbin:/usr/local/bin" >> $TEMPFILE
+#chmod 0440 $TEMPFILE
+#sudo chown root:root $TEMPFILE
+#sudo mv $TEMPFILE /etc/sudoers.d/50_stack_sh
 
 # Create the destination directory and ensure it is writable by the user
 # and read/executable by everybody for daemons (e.g. apache run for horizon)
 sudo mkdir -p $DEST
+# XXX This fails if TRACK_DEPENDS=True
 safe_chown -R $STACK_USER $DEST
 safe_chmod 0755 $DEST
 
@@ -250,6 +258,7 @@ ENABLE_DEBUG_LOG_LEVEL=`trueorfalse True $ENABLE_DEBUG_LOG_LEVEL`
 # Destination path for service data
 DATA_DIR=${DATA_DIR:-${DEST}/data}
 sudo mkdir -p $DATA_DIR
+# XXX This fails if TRACK_DEPENDS=True
 safe_chown -R $STACK_USER $DATA_DIR
 
 
@@ -575,7 +584,7 @@ failed() {
 
 # Print the commands being run so that we can see the command that triggers
 # an error.  It is also useful for following along as the install occurs.
-set -o xtrace
+#set -o xtrace
 
 
 # Install Packages
@@ -588,9 +597,12 @@ set -o xtrace
 echo_summary "Installing package prerequisites"
 source $TOP_DIR/tools/install_prereqs.sh
 
-# Configure an appropriate python environment
-if [[ "$OFFLINE" != "True" ]]; then
-    $TOP_DIR/tools/install_pip.sh
+# XXX why not install pip from ports/pkg?
+if ! is_freebsd; then
+    # Configure an appropriate python environment
+    if [[ "$OFFLINE" != "True" ]]; then
+        $TOP_DIR/tools/install_pip.sh
+    fi
 fi
 
 # Do the ugly hacks for borken packages and distros
@@ -845,7 +857,7 @@ init_service_check
 
 # Sysstat
 # -------
-
+# XXX Linux only
 # If enabled, systat has to start early to track OpenStack service startup.
 if is_service_enabled sysstat;then
     if [[ -n ${SCREEN_LOGDIR} ]]; then
@@ -965,21 +977,31 @@ fi
 # ----
 
 if is_service_enabled n-net q-dhcp; then
-    # Delete traces of nova networks from prior runs
-    # Do not kill any dnsmasq instance spawned by NetworkManager
-    netman_pid=$(pidof NetworkManager || true)
-    if [ -z "$netman_pid" ]; then
-        sudo killall dnsmasq || true
-    else
-        sudo ps h -o pid,ppid -C dnsmasq | grep -v $netman_pid | awk '{print $1}' | sudo xargs kill || true
+    # TODO we have to reinit dhcpd here for FBSD
+    if ! is_freebsd; then
+        # Delete traces of nova networks from prior runs
+        # Do not kill any dnsmasq instance spawned by NetworkManager
+        netman_pid=$(pidof NetworkManager || true)
+        if [ -z "$netman_pid" ]; then
+            sudo killall dnsmasq || true
+        else
+            sudo ps h -o pid,ppid -C dnsmasq | grep -v $netman_pid | awk '{print $1}' | sudo xargs kill || true
+        fi
+
+        clean_iptables
     fi
 
-    clean_iptables
     rm -rf ${NOVA_STATE_PATH}/networks
     sudo mkdir -p ${NOVA_STATE_PATH}/networks
+    # XXX This fails if TRACK_DEPENDS=True
     safe_chown -R ${USER} ${NOVA_STATE_PATH}/networks
+
     # Force IP forwarding on, just in case
-    sudo sysctl -w net.ipv4.ip_forward=1
+    if is_freebsd; then
+        sudo sysctl net.inet.ip.forwarding=1
+    else
+        sudo sysctl -w net.ipv4.ip_forward=1
+    fi
 fi
 
 

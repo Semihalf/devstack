@@ -36,7 +36,7 @@ NOVA_STATE_PATH=${NOVA_STATE_PATH:=$DATA_DIR/nova}
 NOVA_INSTANCES_PATH=${NOVA_INSTANCES_PATH:=${INSTANCES_PATH:=$NOVA_STATE_PATH/instances}}
 NOVA_AUTH_CACHE_DIR=${NOVA_AUTH_CACHE_DIR:-/var/cache/nova}
 
-NOVA_CONF_DIR=/etc/nova
+NOVA_CONF_DIR=${NOVA_CONF_DIR:-/etc/nova}
 NOVA_CONF=$NOVA_CONF_DIR/nova.conf
 NOVA_CELLS_CONF=$NOVA_CONF_DIR/nova-cells.conf
 NOVA_CELLS_DB=${NOVA_CELLS_DB:-nova_cell}
@@ -145,22 +145,25 @@ function clean_iptables() {
 # runs that a clean run would need to clean up
 function cleanup_nova() {
     if is_service_enabled n-cpu; then
-        # Clean iptables from previous runs
-        clean_iptables
+        # TODO this needs to be done in a BSD fashion
+        if ! is_freebsd; then
+            # Clean iptables from previous runs
+            clean_iptables
 
-        # Destroy old instances
-        instances=`sudo virsh list --all | grep $INSTANCE_NAME_PREFIX | sed "s/.*\($INSTANCE_NAME_PREFIX[0-9a-fA-F]*\).*/\1/g"`
-        if [ ! "$instances" = "" ]; then
-            echo $instances | xargs -n1 sudo virsh destroy || true
-            echo $instances | xargs -n1 sudo virsh undefine --managed-save || true
+            # Destroy old instances
+            instances=`sudo virsh list --all | grep $INSTANCE_NAME_PREFIX | sed "s/.*\($INSTANCE_NAME_PREFIX[0-9a-fA-F]*\).*/\1/g"`
+            if [ ! "$instances" = "" ]; then
+                echo $instances | xargs -n1 sudo virsh destroy || true
+                echo $instances | xargs -n1 sudo virsh undefine --managed-save || true
+            fi
+
+            # Logout and delete iscsi sessions
+            tgts=$(sudo iscsiadm --mode node | grep $VOLUME_NAME_PREFIX | cut -d ' ' -f2)
+            for target in $tgts; do
+                sudo iscsiadm --mode node -T $target --logout || true
+            done
+            sudo iscsiadm --mode node --op delete || true
         fi
-
-        # Logout and delete iscsi sessions
-        tgts=$(sudo iscsiadm --mode node | grep $VOLUME_NAME_PREFIX | cut -d ' ' -f2)
-        for target in $tgts; do
-            sudo iscsiadm --mode node -T $target --logout || true
-        done
-        sudo iscsiadm --mode node --op delete || true
 
         # Clean out the instances directory.
         sudo rm -rf $NOVA_INSTANCES_PATH/*
@@ -186,12 +189,12 @@ function configure_nova_rootwrap() {
     # Deploy filters to /etc/nova/rootwrap.d
     sudo mkdir -m 755 $NOVA_CONF_DIR/rootwrap.d
     sudo cp $NOVA_DIR/etc/nova/rootwrap.d/*.filters $NOVA_CONF_DIR/rootwrap.d
-    sudo chown -R root:root $NOVA_CONF_DIR/rootwrap.d
+    sudo chown -R root:wheel $NOVA_CONF_DIR/rootwrap.d
     sudo chmod 644 $NOVA_CONF_DIR/rootwrap.d/*
     # Set up rootwrap.conf, pointing to /etc/nova/rootwrap.d
     sudo cp $NOVA_DIR/etc/nova/rootwrap.conf $NOVA_CONF_DIR/
-    sudo sed -e "s:^filters_path=.*$:filters_path=$NOVA_CONF_DIR/rootwrap.d:" -i $NOVA_CONF_DIR/rootwrap.conf
-    sudo chown root:root $NOVA_CONF_DIR/rootwrap.conf
+    sudo sed -e "s:^filters_path=.*$:filters_path=$NOVA_CONF_DIR/rootwrap.d:" -i '' $NOVA_CONF_DIR/rootwrap.conf
+    sudo chown root:wheel $NOVA_CONF_DIR/rootwrap.conf
     sudo chmod 0644 $NOVA_CONF_DIR/rootwrap.conf
     # Specify rootwrap.conf as first parameter to nova-rootwrap
     ROOTWRAP_SUDOER_CMD="$NOVA_ROOTWRAP $NOVA_CONF_DIR/rootwrap.conf *"
@@ -200,8 +203,8 @@ function configure_nova_rootwrap() {
     TEMPFILE=`mktemp`
     echo "$USER ALL=(root) NOPASSWD: $ROOTWRAP_SUDOER_CMD" >$TEMPFILE
     chmod 0440 $TEMPFILE
-    sudo chown root:root $TEMPFILE
-    sudo mv $TEMPFILE /etc/sudoers.d/nova-rootwrap
+    sudo chown root:wheel $TEMPFILE
+    sudo mv $TEMPFILE /usr/local/etc/sudoers.d/nova-rootwrap
 }
 
 # configure_nova() - Set config files, create data dirs, etc
@@ -216,13 +219,13 @@ function configure_nova() {
 
     configure_nova_rootwrap
 
+    # Remove legacy paste config if present
+    rm -f $NOVA_DIR/bin/nova-api-paste.ini
+
+    # Get the sample configuration file in place
+    cp $NOVA_DIR/etc/nova/api-paste.ini $NOVA_CONF_DIR
+
     if is_service_enabled n-api; then
-        # Remove legacy paste config if present
-        rm -f $NOVA_DIR/bin/nova-api-paste.ini
-
-        # Get the sample configuration file in place
-        cp $NOVA_DIR/etc/nova/api-paste.ini $NOVA_CONF_DIR
-
         # Comment out the keystone configs in Nova's api-paste.ini.
         # We are using nova.conf to configure this instead.
         inicomment $NOVA_API_PASTE_INI filter:authtoken auth_host
@@ -237,8 +240,12 @@ function configure_nova() {
     inicomment $NOVA_API_PASTE_INI filter:authtoken signing_dir
 
     if is_service_enabled n-cpu; then
-        # Force IP forwarding on, just on case
-        sudo sysctl -w net.ipv4.ip_forward=1
+        # Force IP forwarding on, just in case
+        if is_freebsd; then
+            sudo sysctl net.inet.ip.forwarding=1
+        else
+            sudo sysctl -w net.ipv4.ip_forward=1
+        fi
 
         if [[ "$VIRT_DRIVER" = 'libvirt' ]]; then
             # Attempt to load modules: network block device - used to manage qcow images
@@ -285,13 +292,15 @@ function configure_nova() {
         sudo mkdir -p $NOVA_INSTANCES_PATH
         sudo chown -R $STACK_USER $NOVA_INSTANCES_PATH
 
-        # You can specify a different disk to be mounted and used for backing the
-        # virtual machines.  If there is a partition labeled nova-instances we
-        # mount it (ext filesystems can be labeled via e2label).
-        if [ -L /dev/disk/by-label/nova-instances ]; then
-            if ! mount -n | grep -q $NOVA_INSTANCES_PATH; then
-                sudo mount -L nova-instances $NOVA_INSTANCES_PATH
-                sudo chown -R $STACK_USER $NOVA_INSTANCES_PATH
+        if ! is_freebsd; then
+            # You can specify a different disk to be mounted and used for backing the
+            # virtual machines.  If there is a partition labeled nova-instances we
+            # mount it (ext filesystems can be labeled via e2label).
+            if [ -L /dev/disk/by-label/nova-instances ]; then
+                if ! mount -n | grep -q $NOVA_INSTANCES_PATH; then
+                    sudo mount -L nova-instances $NOVA_INSTANCES_PATH
+                    sudo chown -R $STACK_USER $NOVA_INSTANCES_PATH
+                fi
             fi
         fi
     fi
@@ -532,7 +541,7 @@ function create_nova_cache_dir() {
     # Create cache dir
     sudo mkdir -p $NOVA_AUTH_CACHE_DIR
     sudo chown $STACK_USER $NOVA_AUTH_CACHE_DIR
-    rm -f $NOVA_AUTH_CACHE_DIR/*
+    sudo rm -f $NOVA_AUTH_CACHE_DIR/*
 }
 
 function create_nova_conf_nova_network() {
@@ -585,7 +594,7 @@ function init_nova() {
 function install_novaclient() {
     git_clone $NOVACLIENT_REPO $NOVACLIENT_DIR $NOVACLIENT_BRANCH
     setup_develop $NOVACLIENT_DIR
-    sudo install -D -m 0644 -o $STACK_USER {$NOVACLIENT_DIR/tools/,/etc/bash_completion.d/}nova.bash_completion
+    sudo install -m 0644 -o $STACK_USER {$NOVACLIENT_DIR/tools/,/usr/local/etc/bash_completion.d/}nova.bash_completion
 }
 
 # install_nova() - Collect source and prepare
@@ -596,7 +605,7 @@ function install_nova() {
 
     git_clone $NOVA_REPO $NOVA_DIR $NOVA_BRANCH
     setup_develop $NOVA_DIR
-    sudo install -D -m 0644 -o $STACK_USER {$NOVA_DIR/tools/,/etc/bash_completion.d/}nova-manage.bash_completion
+    sudo install -m 0644 -o $STACK_USER {$NOVA_DIR/tools/,/usr/local/etc/bash_completion.d/}nova-manage.bash_completion
 }
 
 # start_nova_api() - Start the API process ahead of other things

@@ -137,6 +137,14 @@ function err() {
     return $exitcode
 }
 
+function _dev_exit() {
+    set +o xtrace
+    local banner='################################################'
+    echo $banner 1>&2;
+    echo "$@" 1>&2;
+    echo $banner 1>&2;
+    exit 777
+}
 
 # Checks an environment variable is not set or has length 0 OR if the
 # exit code is non-zero and prints "message"
@@ -217,6 +225,12 @@ function get_default_host_ip() {
     local host_ip_iface=$3
     local host_ip=$4
 
+    # XXX TODO
+    if is_freebsd; then
+        echo $host_ip
+        return
+    fi
+
     # Find the interface used for the default route
     host_ip_iface=${host_ip_iface:-$(ip route | sed -n '/^default/{ s/.*dev \(\w\+\)\s\+.*/\1/; p; }' | head -1)}
     # Search for an IP unless an explicit is set by ``HOST_IP`` environment variable
@@ -246,6 +260,8 @@ function _get_package_dir() {
         pkg_dir=$FILES/apts
     elif is_fedora; then
         pkg_dir=$FILES/rpms
+    elif is_freebsd; then
+        pkg_dir=$FILES/pkg-freebsd
     elif is_suse; then
         pkg_dir=$FILES/rpms-suse
     else
@@ -402,6 +418,13 @@ GetOSVersion() {
         else
             os_CODENAME=""
         fi
+    elif [[ `uname -s` == "FreeBSD" ]]; then
+        os_VENDOR="FreeBSD"
+        os_RELEASE=$(uname -r)
+        os_UPDATE=${os_RELEASE##*.}
+        os_RELEASE=${os_RELEASE%.*}
+        os_PACKAGE="pkg"
+        os_CODENAME=""
     elif [[ -x $(which lsb_release 2>/dev/null) ]]; then
         os_VENDOR=$(lsb_release -i -s)
         os_RELEASE=$(lsb_release -r -s)
@@ -478,6 +501,9 @@ function GetDistro() {
     elif [[ "$os_VENDOR" =~ (Fedora) ]]; then
         # For Fedora, just use 'f' and the release
         DISTRO="f$os_RELEASE"
+    elif [[ "$os_VENDOR" =~ (FreeBSD) ]]; then
+        # For FreeBSD, just use 'freebsd' and the release
+        DISTRO="freebsd$os_RELEASE"
     elif [[ "$os_VENDOR" =~ (openSUSE) ]]; then
         DISTRO="opensuse-$os_RELEASE"
     elif [[ "$os_VENDOR" =~ (SUSE LINUX) ]]; then
@@ -511,6 +537,13 @@ function is_fedora {
     [ "$os_VENDOR" = "Fedora" ] || [ "$os_VENDOR" = "Red Hat" ] || [ "$os_VENDOR" = "CentOS" ]
 }
 
+function is_freebsd {
+    if [[ -z "$os_VENDOR" ]]; then
+        GetOSVersion
+    fi
+
+    [ "$os_VENDOR" = "FreeBSD" ]
+}
 
 # Determine if current distribution is a SUSE-based distribution
 # (openSUSE, SLE).
@@ -671,7 +704,7 @@ function inicomment() {
     local file=$1
     local section=$2
     local option=$3
-    sed -i -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
+    sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
 }
 
 
@@ -681,7 +714,7 @@ function iniuncomment() {
     local file=$1
     local section=$2
     local option=$3
-    sed -i -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
+    sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
 }
 
 
@@ -723,12 +756,12 @@ function iniset() {
     fi
     if ! ini_has_option "$file" "$section" "$option"; then
         # Add it
-        sed -i -e "/^\[$section\]/ a\\
+        sed -i '' -e "/^\[$section\]/ a\\
 $option = $value
 " "$file"
     else
         # Replace it
-        sed -i -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=[ \t]*\).*$|\1$value|" "$file"
+        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=[ \t]*\).*$|\1$value|" "$file"
     fi
 }
 
@@ -764,11 +797,11 @@ function iniset_multiline() {
         echo -e "\n[$section]" >>"$file"
     else
         # Remove old values
-        sed -i -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
+        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
     fi
     # Add new ones
     for v in $values; do
-        sed -i -e "/^\[$section\]/ a\\
+        sed -i '' -e "/^\[$section\]/ a\\
 $option = $v
 " "$file"
     done
@@ -930,6 +963,8 @@ function install_package() {
         apt_get install "$@"
     elif is_fedora; then
         yum_install "$@"
+    elif is_freebsd; then
+        sudo pkg install -y "$@"
     elif is_suse; then
         zypper_install "$@"
     else
@@ -945,6 +980,8 @@ function uninstall_package() {
         apt_get purge "$@"
     elif is_fedora; then
         sudo yum remove -y "$@"
+    elif is_freebsd; then
+        sudo pkg delete "$@"
     elif is_suse; then
         sudo zypper rm "$@"
     else
@@ -968,6 +1005,8 @@ function is_package_installed() {
         dpkg -s "$@" > /dev/null 2> /dev/null
     elif [[ "$os_PACKAGE" = "rpm" ]]; then
         rpm --quiet -q "$@"
+    elif [[ "$os_PACKAGE" = "pkg" ]]; then
+        pkg info "$@" > /dev/null 2> /dev/null
     else
         exit_distro_not_supported "finding if a package is installed"
     fi
@@ -994,6 +1033,7 @@ function pip_install {
     if [[ $TRACK_DEPENDS = True ]]; then
         source $DEST/.venv/bin/activate
         CMD_PIP=$DEST/.venv/bin/pip
+        PIP_DOWNLOAD_CACHE=$DEST/.venv/var/cache/pip
         SUDO_PIP="env"
     else
         SUDO_PIP="sudo"
@@ -1014,7 +1054,7 @@ function pip_install {
     # 1.1, the existing extracted build will be used and cause
     # confusing errors.  By creating unique build directories we avoid
     # this problem. See https://github.com/pypa/pip/issues/709
-    local pip_build_tmp=$(mktemp --tmpdir -d pip-build.XXXXX)
+    local pip_build_tmp=$(mktemp -d pip-build.XXXXX)
 
     $SUDO_PIP PIP_DOWNLOAD_CACHE=${PIP_DOWNLOAD_CACHE:-/var/cache/pip} \
         HTTP_PROXY=$http_proxy \
@@ -1192,6 +1232,10 @@ function service_check() {
 
 # Returns true if the directory is on a filesystem mounted via NFS.
 function is_nfs_directory() {
+    if is_freebsd; then
+        (df -t nfs "$@" > /dev/null 2> /dev/null)
+        return $?
+    fi
     local mount_type=`stat -f -L -c %T $1`
     test "$mount_type" == "nfs"
 }
@@ -1266,7 +1310,7 @@ function setup_develop() {
     # where we really really want the overridden version to stick. So provide
     # a variable that tells us whether or not we should UNDO the requirements
     # changes (this will be set to False in the OpenStack ci gate)
-    if [ $UNDO_REQUIREMENTS = "True"]; then
+    if [ $UNDO_REQUIREMENTS = "True" ]; then
         if [ $update_requirements -eq 0 ]; then
             (cd $project_dir && git reset --hard)
         fi
@@ -1681,7 +1725,14 @@ function check_path_perm_sanity() {
     for i in $(echo ${real_path} | tr "/" " "); do
         rebuilt_path=$rebuilt_path"/"$i
 
-        if [[ $(stat -c '%a' ${rebuilt_path}) = 700 ]]; then
+        local statperm=""
+        if is_freebsd; then
+            statperm="$(stat -f "%p" ${rebuilt_path})"
+            statperm="${statperm: -3}"
+        else
+            statperm="$(stat -c '%a' ${rebuilt_path})"
+        fi
+        if [[ $statperm = 700 ]]; then
             echo "*** DEST path element"
             echo "***    ${rebuilt_path}"
             echo "*** appears to have 0700 permissions."
