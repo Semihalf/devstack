@@ -62,7 +62,11 @@ function inicomment {
     local file=$1
     local section=$2
     local option=$3
-    sed -i -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
+    if is_freebsd; then
+        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
+    else
+        sed -i -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
+    fi
     $xtrace
 }
 
@@ -126,13 +130,22 @@ function iniset {
     fi
     if ! ini_has_option "$file" "$section" "$option"; then
         # Add it
-        sed -i -e "/^\[$section\]/ a\\
+        if is_freebsd; then
+            sed -i '' -e "/^\[$section\]/ a\\
 $option = $value
+        else
+            sed -i -e "/^\[$section\]/ a\\
+$option = $value
+        fi
 " "$file"
     else
         local sep=$(echo -ne "\x01")
         # Replace it
-        sed -i -e '/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep} "$file"
+        if is_freebsd; then
+            sed -i '' -e '/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep} "$file"
+        else
+            sed -i -e '/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep} "$file"
+        fi
     fi
     $xtrace
 }
@@ -158,12 +171,21 @@ function iniset_multiline {
         echo -e "\n[$section]" >>"$file"
     else
         # Remove old values
-        sed -i -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
+        if is_freebsd; then
+            sed -i '' -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
+        else
+            sed -i -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
+        fi
     fi
     # Add new ones
     for v in $values; do
-        sed -i -e "/^\[$section\]/ a\\
+        if is_freebsd; then
+            sed -i '' -e "/^\[$section\]/ a\\
 $option = $v
+        else
+            sed -i -e "/^\[$section\]/ a\\
+$option = $v
+        fi
 " "$file"
     done
     $xtrace
@@ -177,7 +199,11 @@ function iniuncomment {
     local file=$1
     local section=$2
     local option=$3
-    sed -i -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
+    if is_freebsd; then
+        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
+    else
+        sed -i -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
+    fi
     $xtrace
 }
 
@@ -229,6 +255,15 @@ function die {
     # Give buffers a second to flush
     sleep 1
     exit $exitcode
+}
+
+function _dev_exit() {
+    set +o xtrace
+    local banner='################################################'
+    echo $banner 1>&2;
+    echo "$@" 1>&2;
+    echo $banner 1>&2;
+    exit 777
 }
 
 # Checks an environment variable is not set or has length 0 OR if the
@@ -350,6 +385,13 @@ function GetOSVersion {
         else
             os_CODENAME=""
         fi
+    elif [[ `uname -s` == "FreeBSD" ]]; then
+        os_VENDOR="FreeBSD"
+        os_RELEASE=$(uname -r)
+        os_UPDATE=${os_RELEASE##*.}
+        os_RELEASE=${os_RELEASE%.*}
+        os_PACKAGE="pkg"
+        os_CODENAME=""
     elif [[ -x $(which lsb_release 2>/dev/null) ]]; then
         os_VENDOR=$(lsb_release -i -s)
         os_RELEASE=$(lsb_release -r -s)
@@ -426,6 +468,9 @@ function GetDistro {
     elif [[ "$os_VENDOR" =~ (Fedora) ]]; then
         # For Fedora, just use 'f' and the release
         DISTRO="f$os_RELEASE"
+    elif [[ "$os_VENDOR" =~ (FreeBSD) ]]; then
+        # For FreeBSD, just use 'freebsd' and the release
+        DISTRO="freebsd$os_RELEASE"
     elif [[ "$os_VENDOR" =~ (openSUSE) ]]; then
         DISTRO="opensuse-$os_RELEASE"
     elif [[ "$os_VENDOR" =~ (SUSE LINUX) ]]; then
@@ -464,6 +509,14 @@ function is_fedora {
     fi
 
     [ "$os_VENDOR" = "Fedora" ] || [ "$os_VENDOR" = "Red Hat" ] || [ "$os_VENDOR" = "CentOS" ]
+}
+
+function is_freebsd {
+    if [[ -z "$os_VENDOR" ]]; then
+        GetOSVersion
+    fi
+
+    [ "$os_VENDOR" = "FreeBSD" ]
 }
 
 
@@ -653,6 +706,12 @@ function get_default_host_ip {
     local floating_range=$2
     local host_ip_iface=$3
     local host_ip=$4
+    
+    # XXX TODO
+    if is_freebsd; then
+        echo $host_ip
+        return
+    fi
 
     # Find the interface used for the default route
     host_ip_iface=${host_ip_iface:-$(ip route | sed -n '/^default/{ s/.*dev \(\w\+\)\s\+.*/\1/; p; }' | head -1)}
@@ -730,6 +789,8 @@ function _get_package_dir {
         pkg_dir=$FILES/apts
     elif is_fedora; then
         pkg_dir=$FILES/rpms
+    elif is_freebsd; then
+        pkg_dir=$FILES/pkg-freebsd
     elif is_suse; then
         pkg_dir=$FILES/rpms-suse
     else
@@ -895,6 +956,9 @@ function install_package {
     elif is_fedora; then
         $xtrace
         yum_install "$@"
+    elif is_freebsd; then
+        $xtrace
+        sudo pkg install -y "$@"
     elif is_suse; then
         $xtrace
         zypper_install "$@"
@@ -919,6 +983,8 @@ function is_package_installed {
         dpkg -s "$@" > /dev/null 2> /dev/null
     elif [[ "$os_PACKAGE" = "rpm" ]]; then
         rpm --quiet -q "$@"
+    elif [[ "$os_PACKAGE" = "pkg" ]]; then
+        pkg info "$@" > /dev/null 2> /dev/null
     else
         exit_distro_not_supported "finding if a package is installed"
     fi
@@ -931,6 +997,8 @@ function uninstall_package {
         apt_get purge "$@"
     elif is_fedora; then
         sudo yum remove -y "$@"
+    elif is_freebsd; then
+        sudo pkg delete "$@"
     elif is_suse; then
         sudo zypper rm "$@"
     else
@@ -1207,6 +1275,7 @@ function pip_install {
     if [[ $TRACK_DEPENDS = True ]]; then
         source $DEST/.venv/bin/activate
         CMD_PIP=$DEST/.venv/bin/pip
+        PIP_DOWNLOAD_CACHE=$DEST/.venv/var/cache/pip
         SUDO_PIP="env"
     else
         SUDO_PIP="sudo"
@@ -1227,7 +1296,7 @@ function pip_install {
     # 1.1, the existing extracted build will be used and cause
     # confusing errors.  By creating unique build directories we avoid
     # this problem. See https://github.com/pypa/pip/issues/709
-    local pip_build_tmp=$(mktemp --tmpdir -d pip-build.XXXXX)
+    local pip_build_tmp=$(mktemp -d pip-build.XXXXX)
 
     $xtrace
     $SUDO_PIP PIP_DOWNLOAD_CACHE=${PIP_DOWNLOAD_CACHE:-/var/cache/pip} \
@@ -1564,6 +1633,10 @@ function export_proxy_variables {
 
 # Returns true if the directory is on a filesystem mounted via NFS.
 function is_nfs_directory {
+    if is_freebsd; then
+        (df -t nfs "$@" > /dev/null 2> /dev/null)
+        return $?
+    fi
     local mount_type=`stat -f -L -c %T $1`
     test "$mount_type" == "nfs"
 }

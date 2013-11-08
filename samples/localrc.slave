@@ -1,0 +1,81 @@
+# Stack user name
+STACK_USER=stack
+
+# Passwords
+ADMIN_PASSWORD=1qaz
+MYSQL_PASSWORD=$ADMIN_PASSWORD
+SERVICE_TOKEN=$ADMIN_PASSWORD
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+RABBIT_PASSWORD=$ADMIN_PASSWORD
+STACK_USER_PASSWORD=1qaz
+
+HOST_IP_IFACE=igb0
+HOST_IP=10.100.1.21
+
+DEST=/home/stack
+
+#GLANCE_CONF_DIR=/usr/local/etc/glance
+#NOVA_CONF_DIR=/usr/local/etc/nova
+
+# Logging
+LOGFILE=$DEST/logs/stack.sh.log
+LOG_COLOR=False
+SCREEN_LOGDIR=$DEST/logs/screen
+
+#SYSLOG=True
+#SYSLOG_HOST=$HOST_IP
+#SYSLOG_PORT=516
+
+#RECLONE=yes
+
+SWIFT_HASH="66a3d6b56c1f479c8b4e70ab5c2000f5"
+SWIFT_REPLICAS=1
+
+# use venv (and exit before init+run => just install all components and exit)
+#TRACK_DEPENDS=True
+
+# force calling tools/install_prereqs.sh
+#FORCE_PREREQ=1
+
+# Slave host components
+#MULTI_HOST=True
+ENABLED_SERVICES=n-cpu
+#ENABLED_SERVICES=n-cpu,n-api-meta
+#ENABLED_SERVICES=n-cpu,n-net
+#ENABLED_SERVICES=n-cpu,n-net,g-api
+#ENABLED_SERVICES=n-cpu,rabbit,n-net,g-api
+#ENABLED_SERVICES=n-vol,n-cpu,n-net,n-api
+#ENABLED_SERVICES=n-cpu,n-net,n-api
+#ENABLED_SERVICES=n-cpu,n-net,n-api,n-vol
+
+VIRT_DRIVER=fake
+#NUMBER_FAKE_NOVA_COMPUTE=2
+
+FLAT_INTERFACE=igb0
+FLAT_NETWORK_BRIDGE=bridge0
+PUBLIC_INTERFACE=bridge0
+VLAN_INTERFACE=igb0
+
+DATABASE_TYPE=mysql
+SERVICE_HOST=10.100.1.11
+MYSQL_HOST=$SERVICE_HOST
+RABBIT_HOST=$SERVICE_HOST
+KEYSTONE_AUTH_HOST=$SERVICE_HOST
+GLANCE_HOSTPORT=$SERVICE_HOST:9292
+
+#
+# XXX
+#
+
+# From http://devstack.org/guides/multinode-lab.html
+#FLAT_INTERFACE=eth0
+#FIXED_RANGE=10.4.128.0/20
+#FIXED_NETWORK_SIZE=4096
+#FLOATING_RANGE=192.168.42.128/25
+#ENABLED_SERVICES=n-cpu,n-net,n-api,c-sch,c-api,c-vol
+
+# From README.md
+#ENABLED_SERVICES=n-cpu,rabbit,g-api,neutron,q-agt
+#SERVICE_HOST=[IP of controller node]
+#Q_HOST=$SERVICE_HOST
+#MATCHMAKER_REDIS_HOST=$SERVICE_HOST

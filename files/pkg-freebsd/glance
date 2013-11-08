@@ -1,0 +1,6 @@
+#libxml2
+#py27-argparse
+#py27-eventlet
+#py27-greenlet
+#py27-xattr
+#lzlib

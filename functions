@@ -16,7 +16,6 @@ source ${FUNC_DIR}/functions-common
 XTRACE=$(set +o | grep xtrace)
 set +o xtrace
 
-
 # Checks if installed Apache is <= given version
 # $1 = x.y.z (version string of Apache)
 function check_apache_version {
@@ -38,7 +37,6 @@ function cleanup_tmp {
     # see comments in pip_install
     sudo rm -rf ${tmp_dir}/pip-build.*
 }
-
 
 # Retrieve an image from a URL and upload into Glance.
 # Uses the following variables:
@@ -437,7 +435,14 @@ function check_path_perm_sanity {
     for i in $(echo ${real_path} | tr "/" " "); do
         rebuilt_path=$rebuilt_path"/"$i
 
-        if [[ $(stat -c '%a' ${rebuilt_path}) = 700 ]]; then
+        local statperm=""
+        if is_freebsd; then
+            statperm="$(stat -f "%p" ${rebuilt_path})"
+            statperm="${statperm: -3}"
+        else
+            statperm="$(stat -c '%a' ${rebuilt_path})"
+        fi
+        if [[ $statperm = 700 ]]; then
             echo "*** DEST path element"
             echo "***    ${rebuilt_path}"
             echo "*** appears to have 0700 permissions."

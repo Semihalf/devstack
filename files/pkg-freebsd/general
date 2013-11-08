@@ -1,0 +1,12 @@
+curl
+dbus
+git
+libxml2
+libxslt
+psmisc
+#pylint-py27
+py27-pip
+py27-virtualenv
+screen
+unzip
+wget

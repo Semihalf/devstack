@@ -16,7 +16,7 @@ SERVICE_DIR=${DEST}/status
 if [[ $EUID -eq 0 ]]; then
     STACK_USER=stack
 else
-    STACK_USER=$(whoami)
+    STACK_USER=${STACK_USER:-$(whoami)}
 fi
 
 # Specify which services to launch.  These generally correspond to
@@ -264,7 +264,9 @@ PECAN_BRANCH=${PECAN_BRANCH:-master}
 # also install an **LXC**, **OpenVZ** or **XenAPI** based system.  If xenserver-core
 # is installed, the default will be XenAPI
 DEFAULT_VIRT_DRIVER=libvirt
-is_package_installed xenserver-core && DEFAULT_VIRT_DRIVER=xenserver
+if ! is_freebsd ; then
+    is_package_installed xenserver-core && DEFAULT_VIRT_DRIVER=xenserver
+fi
 VIRT_DRIVER=${VIRT_DRIVER:-$DEFAULT_VIRT_DRIVER}
 case "$VIRT_DRIVER" in
     ironic|libvirt)
