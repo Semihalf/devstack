@@ -102,10 +102,12 @@ if is_service_enabled nova && [[ -r $NOVA_PLUGINS/hypervisor-$VIRT_DRIVER ]]; th
 fi
 
 # Clean out /etc
-sudo rm -rf /etc/keystone /etc/glance /etc/nova /etc/cinder /etc/swift
+sudo rm -rf $INSTALL_PREFIX/etc/keystone $INSTALL_PREFIX/etc/glance \
+    $INSTALL_PREFIX/etc/nova $INSTALL_PREFIX/etc/cinder \
+    $INSTALL_PREFIX/etc/swift
 
 # Clean out tgt
-sudo rm -f /etc/tgt/conf.d/*
+sudo rm -f $INSTALL_PREFIX/etc/tgt/conf.d/*
 
 # Clean up the message queue
 cleanup_rpc_backend

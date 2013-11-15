@@ -47,7 +47,7 @@ cat >test.conf <<EOF
 [default]
 # comment an option
 #log_file=./log.conf
-log_file=/etc/log.conf
+log_file=$INSTALL_PREFIX/etc/log.conf
 handlers=do not disturb
 
 [aaa]

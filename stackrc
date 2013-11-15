@@ -19,6 +19,9 @@ else
     STACK_USER=${STACK_USER:-$(whoami)}
 fi
 
+# Set local system prefix i.e. /usr/local or empty
+INSTALL_PREFIX=$(get_install_prefix)
+
 # Specify which services to launch.  These generally correspond to
 # screen tabs. To change the default list, use the ``enable_service`` and
 # ``disable_service`` functions in ``localrc``.

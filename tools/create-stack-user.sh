@@ -61,15 +61,12 @@ if ! getent passwd $STACK_USER >/dev/null; then
 fi
 
 echo "Giving stack user passwordless sudo privileges"
-if is_freebsd; then
-    SUDOERS_PREFIX='/usr/local'
-fi
-SUDOERS_ETC_FILE="$SUDOERS_PREFIX/etc/sudoers"
-SUDOERS_STACK_FILE="$SUDOERS_PREFIX/etc/sudoers.d/50_stack_sh"
+SUDOERS_ETC_FILE="$INSTALL_PREFIX/etc/sudoers"
+SUDOERS_STACK_FILE="$INSTALL_PREFIX/etc/sudoers.d/50_stack_sh"
 
 # UEC images ``/etc/sudoers`` does not have a ``#includedir``, add one
-grep -q "^#includedir.*/usr/local/etc/sudoers.d" $SUDOERS_ETC_FILE ||
-    echo "#includedir /usr/local/etc/sudoers.d" >> $SUDOERS_ETC_FILE
+grep -q "^#includedir.*$INSTALL_PREFIX/etc/sudoers.d" $SUDOERS_ETC_FILE ||
+    echo "#includedir $INSTALL_PREFIX/etc/sudoers.d" >> $SUDOERS_ETC_FILE
 ( umask 226 && echo "$STACK_USER ALL=(ALL) NOPASSWD:ALL" \
     > $SUDOERS_STACK_FILE )
 

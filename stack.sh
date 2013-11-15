@@ -809,16 +809,16 @@ if [[ $SYSLOG != "False" ]]; then
 \$ModLoad imrelp
 \$InputRELPServerRun $SYSLOG_PORT
 EOF
-        sudo mv /tmp/90-stack-m.conf /etc/rsyslog.d
+        sudo mv /tmp/90-stack-m.conf $INSTALL_PREFIX/etc/rsyslog.d
     else
         # Set rsyslog to send to remote host
         cat <<EOF >/tmp/90-stack-s.conf
 *.*		:omrelp:$SYSLOG_HOST:$SYSLOG_PORT
 EOF
-        sudo mv /tmp/90-stack-s.conf /etc/rsyslog.d
+        sudo mv /tmp/90-stack-s.conf $INSTALL_PREFIX/etc/rsyslog.d
     fi
 
-    RSYSLOGCONF="/etc/rsyslog.conf"
+    RSYSLOGCONF="$INSTALL_PREFIX/etc/rsyslog.conf"
     if [ -f $RSYSLOGCONF ]; then
         sudo cp -b $RSYSLOGCONF $RSYSLOGCONF.bak
         if [[ $(grep '$SystemLogRateLimitBurst' $RSYSLOGCONF)  ]]; then
