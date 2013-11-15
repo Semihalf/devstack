@@ -113,7 +113,7 @@ function init_horizon() {
     sudo mkdir -p $HORIZON_DIR/.blackhole
 
     HORIZON_REQUIRE=''
-    local horizon_conf=/etc/$APACHE_NAME/$APACHE_CONF_DIR/horizon.conf
+    local horizon_conf=$INSTALL_PREFIX/etc/$APACHE_NAME/$APACHE_CONF_DIR/horizon.conf
     if is_ubuntu; then
         # Clean up the old config name
         sudo rm -f /etc/apache2/sites-enabled/000-default

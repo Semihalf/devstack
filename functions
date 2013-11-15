@@ -1690,6 +1690,13 @@ function get_python_exec_prefix() {
     fi
 }
 
+function get_install_prefix() {
+    if is_freebsd; then
+        echo "/usr/local"
+    else
+        echo ""
+    fi
+}
 
 # Get the location of the $module-rootwrap executables, where module is cinder
 # or nova.

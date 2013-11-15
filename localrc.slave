@@ -14,9 +14,6 @@ HOST_IP=10.100.1.21
 
 DEST=/home/stack
 
-#GLANCE_CONF_DIR=/usr/local/etc/glance
-#NOVA_CONF_DIR=/usr/local/etc/nova
-
 # Logging
 LOGFILE=$DEST/logs/stack.sh.log
 LOG_COLOR=False

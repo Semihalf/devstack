@@ -29,7 +29,7 @@ set +o xtrace
 
 # Set up default directories
 XXXX_DIR=$DEST/XXXX
-XXX_CONF_DIR=/etc/XXXX
+XXX_CONF_DIR=$INSTALL_PREFIX/etc/XXXX
 
 
 # Entry Points

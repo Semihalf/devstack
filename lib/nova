@@ -36,7 +36,7 @@ NOVA_STATE_PATH=${NOVA_STATE_PATH:=$DATA_DIR/nova}
 NOVA_INSTANCES_PATH=${NOVA_INSTANCES_PATH:=${INSTANCES_PATH:=$NOVA_STATE_PATH/instances}}
 NOVA_AUTH_CACHE_DIR=${NOVA_AUTH_CACHE_DIR:-/var/cache/nova}
 
-NOVA_CONF_DIR=${NOVA_CONF_DIR:-/etc/nova}
+NOVA_CONF_DIR=${NOVA_CONF_DIR:-$INSTALL_PREFIX/etc/nova}
 NOVA_CONF=$NOVA_CONF_DIR/nova.conf
 NOVA_CELLS_CONF=$NOVA_CONF_DIR/nova-cells.conf
 NOVA_CELLS_DB=${NOVA_CELLS_DB:-nova_cell}
@@ -71,7 +71,7 @@ FORCE_CONFIG_DRIVE=${FORCE_CONFIG_DRIVE:-"always"}
 # should work in most cases.
 SCHEDULER=${SCHEDULER:-nova.scheduler.filter_scheduler.FilterScheduler}
 
-QEMU_CONF=/etc/libvirt/qemu.conf
+QEMU_CONF=$INSTALL_PREFIX/etc/libvirt/qemu.conf
 
 NOVNC_DIR=$DEST/noVNC
 SPICE_DIR=$DEST/spice-html5
@@ -204,7 +204,7 @@ function configure_nova_rootwrap() {
     echo "$USER ALL=(root) NOPASSWD: $ROOTWRAP_SUDOER_CMD" >$TEMPFILE
     chmod 0440 $TEMPFILE
     sudo chown root:wheel $TEMPFILE
-    sudo mv $TEMPFILE /usr/local/etc/sudoers.d/nova-rootwrap
+    sudo mv $TEMPFILE $INSTALL_PREFIX/etc/sudoers.d/nova-rootwrap
 }
 
 # configure_nova() - Set config files, create data dirs, etc
@@ -594,7 +594,7 @@ function init_nova() {
 function install_novaclient() {
     git_clone $NOVACLIENT_REPO $NOVACLIENT_DIR $NOVACLIENT_BRANCH
     setup_develop $NOVACLIENT_DIR
-    sudo install -m 0644 -o $STACK_USER {$NOVACLIENT_DIR/tools/,/usr/local/etc/bash_completion.d/}nova.bash_completion
+    sudo install -m 0644 -o $STACK_USER {$NOVACLIENT_DIR/tools/,$INSTALL_PREFIX/etc/bash_completion.d/}nova.bash_completion
 }
 
 # install_nova() - Collect source and prepare
@@ -605,7 +605,7 @@ function install_nova() {
 
     git_clone $NOVA_REPO $NOVA_DIR $NOVA_BRANCH
     setup_develop $NOVA_DIR
-    sudo install -m 0644 -o $STACK_USER {$NOVA_DIR/tools/,/usr/local/etc/bash_completion.d/}nova-manage.bash_completion
+    sudo install -m 0644 -o $STACK_USER {$NOVA_DIR/tools/,$INSTALL_PREFIX/etc/bash_completion.d/}nova-manage.bash_completion
 }
 
 # start_nova_api() - Start the API process ahead of other things

@@ -34,7 +34,7 @@ CINDERCLIENT_DIR=$DEST/python-cinderclient
 CINDER_STATE_PATH=${CINDER_STATE_PATH:=$DATA_DIR/cinder}
 CINDER_AUTH_CACHE_DIR=${CINDER_AUTH_CACHE_DIR:-/var/cache/cinder}
 
-CINDER_CONF_DIR=/etc/cinder
+CINDER_CONF_DIR=$INSTALL_PREFIX/etc/cinder
 CINDER_CONF=$CINDER_CONF_DIR/cinder.conf
 CINDER_API_PASTE_INI=$CINDER_CONF_DIR/api-paste.ini
 
@@ -202,7 +202,7 @@ function configure_cinder() {
     echo "$USER ALL=(root) NOPASSWD: $ROOTWRAP_CINDER_SUDOER_CMD" >$TEMPFILE
     chmod 0440 $TEMPFILE
     sudo chown root:root $TEMPFILE
-    sudo mv $TEMPFILE /usr/local/etc/sudoers.d/cinder-rootwrap
+    sudo mv $TEMPFILE $INSTALL_PREFIX/etc/sudoers.d/cinder-rootwrap
 
     cp $CINDER_DIR/etc/cinder/api-paste.ini $CINDER_API_PASTE_INI
 
@@ -483,14 +483,14 @@ function install_cinder() {
 function install_cinderclient() {
     git_clone $CINDERCLIENT_REPO $CINDERCLIENT_DIR $CINDERCLIENT_BRANCH
     setup_develop $CINDERCLIENT_DIR
-    sudo install -m 0644 -o $STACK_USER {$CINDERCLIENT_DIR/tools/,/usr/local/etc/bash_completion.d/}cinder.bash_completion
+    sudo install -m 0644 -o $STACK_USER {$CINDERCLIENT_DIR/tools/,$INSTALL_PREFIX/etc/bash_completion.d/}cinder.bash_completion
 }
 
 # apply config.d approach for cinder volumes directory
 function _configure_tgt_for_config_d() {
-    if [[ ! -d /etc/tgt/stack.d/ ]]; then
-        sudo ln -sf $CINDER_STATE_PATH/volumes /etc/tgt/stack.d
-        echo "include /etc/tgt/stack.d/*" | sudo tee -a /etc/tgt/targets.conf
+    if [[ ! -d $INSTALL_PREFIX/etc/tgt/stack.d/ ]]; then
+        sudo ln -sf $CINDER_STATE_PATH/volumes $INSTALL_PREFIX/etc/tgt/stack.d
+        echo "include $INSTALL_PREFIX/etc/tgt/stack.d/*" | sudo tee -a $INSTALL_PREFIX/etc/tgt/targets.conf
     fi
 }
 
@@ -498,7 +498,7 @@ function _configure_tgt_for_config_d() {
 function start_cinder() {
     if is_service_enabled c-vol; then
         # Delete any old stack.conf
-        sudo rm -f /etc/tgt/conf.d/stack.conf
+        sudo rm -f $INSTALL_PREFIX/etc/tgt/conf.d/stack.conf
         _configure_tgt_for_config_d
         if is_ubuntu; then
             # tgt in oneiric doesn't restart properly if tgtd isn't running
