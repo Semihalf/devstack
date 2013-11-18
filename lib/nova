@@ -181,6 +181,12 @@ function cleanup_nova() {
 
 # configure_nova_rootwrap() - configure Nova's rootwrap
 function configure_nova_rootwrap() {
+    local filters_dir="$NOVA_DIR/etc/nova/rootwrap.d"
+    local root_group="root"
+    if is_freebsd; then
+        filters_dir="$filters_dir/freebsd"
+        root_group="wheel"
+    fi
     # Deploy new rootwrap filters files (owned by root).
     # Wipe any existing rootwrap.d files first
     if [[ -d $NOVA_CONF_DIR/rootwrap.d ]]; then
@@ -188,13 +194,13 @@ function configure_nova_rootwrap() {
     fi
     # Deploy filters to /etc/nova/rootwrap.d
     sudo mkdir -m 755 $NOVA_CONF_DIR/rootwrap.d
-    sudo cp $NOVA_DIR/etc/nova/rootwrap.d/*.filters $NOVA_CONF_DIR/rootwrap.d
-    sudo chown -R root:wheel $NOVA_CONF_DIR/rootwrap.d
+    sudo cp $filters_dir/*.filters $NOVA_CONF_DIR/rootwrap.d
+    sudo chown -R root:$root_group $NOVA_CONF_DIR/rootwrap.d
     sudo chmod 644 $NOVA_CONF_DIR/rootwrap.d/*
     # Set up rootwrap.conf, pointing to /etc/nova/rootwrap.d
     sudo cp $NOVA_DIR/etc/nova/rootwrap.conf $NOVA_CONF_DIR/
     sudo sed -e "s:^filters_path=.*$:filters_path=$NOVA_CONF_DIR/rootwrap.d:" -i '' $NOVA_CONF_DIR/rootwrap.conf
-    sudo chown root:wheel $NOVA_CONF_DIR/rootwrap.conf
+    sudo chown root:$root_group $NOVA_CONF_DIR/rootwrap.conf
     sudo chmod 0644 $NOVA_CONF_DIR/rootwrap.conf
     # Specify rootwrap.conf as first parameter to nova-rootwrap
     ROOTWRAP_SUDOER_CMD="$NOVA_ROOTWRAP $NOVA_CONF_DIR/rootwrap.conf *"
@@ -203,7 +209,7 @@ function configure_nova_rootwrap() {
     TEMPFILE=`mktemp`
     echo "$USER ALL=(root) NOPASSWD: $ROOTWRAP_SUDOER_CMD" >$TEMPFILE
     chmod 0440 $TEMPFILE
-    sudo chown root:wheel $TEMPFILE
+    sudo chown root:$root_group $TEMPFILE
     sudo mv $TEMPFILE $INSTALL_PREFIX/etc/sudoers.d/nova-rootwrap
 }
 
