@@ -407,6 +407,12 @@ function create_nova_conf() {
         iniset $NOVA_CONF DEFAULT bindir "/usr/bin"
     fi
 
+    if is_freebsd; then
+        # FreeBSD specific settings
+        iniset $NOVA_CONF DEFAULT network_driver "nova.network.freebsd_net"
+        iniset $NOVA_CONF DEFAULT l3_lib "nova.network.l3.FreeBSDNetL3"
+    fi
+
     if is_service_enabled n-api; then
         iniset $NOVA_CONF DEFAULT enabled_apis "$NOVA_ENABLED_APIS"
         if is_service_enabled tls-proxy; then
