@@ -45,7 +45,7 @@ ENABLED_SERVICES=n-cpu,n-api-meta,n-net
 #ENABLED_SERVICES=n-cpu,n-net,n-api
 #ENABLED_SERVICES=n-cpu,n-net,n-api,n-vol
 
-VIRT_DRIVER=fake
+VIRT_DRIVER=bhyve
 #NUMBER_FAKE_NOVA_COMPUTE=2
 
 FLAT_INTERFACE=igb0
