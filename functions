@@ -225,18 +225,20 @@ function get_default_host_ip() {
     local host_ip_iface=$3
     local host_ip=$4
 
-    # XXX TODO
-    if is_freebsd; then
-        echo $host_ip
-        return
-    fi
-
     # Find the interface used for the default route
-    host_ip_iface=${host_ip_iface:-$(ip route | sed -n '/^default/{ s/.*dev \(\w\+\)\s\+.*/\1/; p; }' | head -1)}
+    if is_freebsd; then
+        host_ip_iface=${host_ip_iface:-$(netstat -rn | grep default | awk '{print $6}')}
+    else
+        host_ip_iface=${host_ip_iface:-$(ip route | sed -n '/^default/{ s/.*dev \(\w\+\)\s\+.*/\1/; p; }' | head -1)}
+    fi
     # Search for an IP unless an explicit is set by ``HOST_IP`` environment variable
     if [ -z "$host_ip" -o "$host_ip" == "dhcp" ]; then
         host_ip=""
-        host_ips=`LC_ALL=C ip -f inet addr show ${host_ip_iface} | awk '/inet/ {split($2,parts,"/");  print parts[1]}'`
+        if is_freebsd; then
+            host_ips=`ifconfig ${host_ip_iface} | grep 'inet ' | cut -d' ' -f2`
+        else
+            host_ips=`LC_ALL=C ip -f inet addr show ${host_ip_iface} | awk '/inet/ {split($2,parts,"/");  print parts[1]}'`
+        fi
         for IP in $host_ips; do
             # Attempt to filter out IP addresses that are part of the fixed and
             # floating range. Note that this method only works if the ``netaddr``
