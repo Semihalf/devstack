@@ -9,5 +9,6 @@ py27-greenlet
 py27-kombu
 py27-lockfile
 py27-mox
+py27-sqlite3
 rabbitmq # NOPRIME
 sudo
