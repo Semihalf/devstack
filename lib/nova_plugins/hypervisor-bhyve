@@ -58,14 +58,12 @@ function install_nova_hypervisor() {
 
 # start_nova_hypervisor - Start any required external services
 function start_nova_hypervisor() {
-    # This function intentionally left blank
-    :
+    sudo kldload vmm
 }
 
 # stop_nova_hypervisor - Stop any external services
 function stop_nova_hypervisor() {
-    # This function intentionally left blank
-    :
+    sudo kldunload vmm
 }
 
 
