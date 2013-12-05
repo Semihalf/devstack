@@ -1,6 +1,9 @@
+arping
 curl
+dnsmasq
 gawk
 mysql55-server # NOPRIME
+netmask
 py27-MySQLdb
 py27-libxml2
 py27-eventlet
