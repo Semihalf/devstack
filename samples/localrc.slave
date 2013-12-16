@@ -43,14 +43,8 @@ FLOATING_RANGE=192.168.1.128/25
 #ENABLED_SERVICES=n-cpu
 ENABLED_SERVICES=n-cpu,n-api-meta,n-net
 #ENABLED_SERVICES=n-cpu,n-net
-#ENABLED_SERVICES=n-cpu,n-net,g-api
-#ENABLED_SERVICES=n-cpu,rabbit,n-net,g-api
-#ENABLED_SERVICES=n-vol,n-cpu,n-net,n-api
-#ENABLED_SERVICES=n-cpu,n-net,n-api
-#ENABLED_SERVICES=n-cpu,n-net,n-api,n-vol
 
 VIRT_DRIVER=bhyve
-#NUMBER_FAKE_NOVA_COMPUTE=2
 
 FLAT_INTERFACE=igb1
 FLAT_NETWORK_BRIDGE=bridge0
@@ -67,21 +61,3 @@ GLANCE_HOSTPORT=$SERVICE_HOST:9292
 # Nova development repo
 NOVA_REPO=https://github.com/Semihalf/openstack-nova.git
 NOVA_BRANCH=freebsd
-
-
-#
-# XXX
-#
-
-# From http://devstack.org/guides/multinode-lab.html
-#FLAT_INTERFACE=eth0
-#FIXED_RANGE=10.4.128.0/20
-#FIXED_NETWORK_SIZE=4096
-#FLOATING_RANGE=192.168.42.128/25
-#ENABLED_SERVICES=n-cpu,n-net,n-api,c-sch,c-api,c-vol
-
-# From README.md
-#ENABLED_SERVICES=n-cpu,rabbit,g-api,neutron,q-agt
-#SERVICE_HOST=[IP of controller node]
-#Q_HOST=$SERVICE_HOST
-#MATCHMAKER_REDIS_HOST=$SERVICE_HOST
