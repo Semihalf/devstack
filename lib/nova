@@ -467,6 +467,12 @@ function create_nova_conf {
         iniset $NOVA_CONF DEFAULT bindir "/usr/local/bin"
         iniset $NOVA_CONF DEFAULT network_driver "nova.network.freebsd_net"
         iniset $NOVA_CONF DEFAULT l3_lib "nova.network.l3.FreeBSDNetL3"
+
+        # XXX The dhcp_release is currently (2013.12) not available on
+        # FreeBSD, so we suppress it and also set a shorter timeout for
+        # reclaiming unused IPs by the system.
+        iniset $NOVA_CONF DEFAULT force_dhcp_release "False"
+        iniset $NOVA_CONF DEFAULT fixed_ip_disassocate_timeout "120"
     fi
 
     if is_service_enabled n-api; then
