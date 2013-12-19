@@ -1,7 +1,6 @@
 arping
 dnsmasq
 gawk
-mysql55-server # NOPRIME
 netmask
 py27-MySQLdb
 py27-libxml2
@@ -11,5 +10,4 @@ py27-kombu
 py27-lockfile
 py27-mox
 py27-sqlite3
-rabbitmq # NOPRIME
 sudo
