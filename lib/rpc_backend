@@ -96,7 +96,7 @@ function install_rpc_backend() {
         # Install rabbitmq-server
         # the temp file is necessary due to LP: #878600
         tfile=$(mktemp)
-        install_package rabbitmq > "$tfile" 2>&1
+        install_package rabbitmq-server > "$tfile" 2>&1
         cat "$tfile"
         rm -f "$tfile"
     elif is_service_enabled qpid; then

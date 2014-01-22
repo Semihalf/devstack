@@ -46,7 +46,7 @@ SWIFT_DISK_IMAGE=${SWIFT_DATA_DIR}/drives/images/swift.img
 # Set ``SWIFT_CONF_DIR`` to the location of the configuration files.
 # Default is ``/etc/swift``.
 # TODO(dtroyer): remove SWIFT_CONFIG_DIR after cutting stable/grizzly
-SWIFT_CONF_DIR=${SWIFT_CONF_DIR:-${SWIFT_CONFIG_DIR:-$INSTALL_PREFIX/etc/swift}}
+SWIFT_CONF_DIR=${SWIFT_CONF_DIR:-${SWIFT_CONFIG_DIR:-/etc/swift}}
 
 if is_service_enabled s-proxy && is_service_enabled swift3; then
     # If we are using swift3, we can default the s3 port to swift instead
@@ -131,7 +131,7 @@ function _cleanup_swift_apache_wsgi() {
         for type in object container account; do
             site_name=${type}-server-${node_number}
             disable_apache_site ${site_name}
-            sudo rm -f $INSTALL_PREFIX/etc/$APACHE_NAME/$APACHE_CONF_DIR/${site_name}
+            sudo rm -f /etc/$APACHE_NAME/$APACHE_CONF_DIR/${site_name}
         done
     done
 }
@@ -139,7 +139,7 @@ function _cleanup_swift_apache_wsgi() {
 # _config_swift_apache_wsgi() - Set WSGI config files of Swift
 function _config_swift_apache_wsgi() {
     sudo mkdir -p ${SWIFT_APACHE_WSGI_DIR}
-    local apache_vhost_dir=$INSTALL_PREFIX/etc/${APACHE_NAME}/$APACHE_CONF_DIR
+    local apache_vhost_dir=/etc/${APACHE_NAME}/$APACHE_CONF_DIR
     local proxy_port=${SWIFT_DEFAULT_BIND_PORT:-8080}
 
     # copy proxy vhost and wsgi file
@@ -240,7 +240,7 @@ function configure_swift() {
         s/%GROUP%/${USER_GROUP}/;
         s/%USER%/$USER/;
         s,%SWIFT_DATA_DIR%,$SWIFT_DATA_DIR,;
-    " $FILES/swift/rsyncd.conf | sudo tee $INSTALL_PREFIX/etc/rsyncd.conf
+    " $FILES/swift/rsyncd.conf | sudo tee /etc/rsyncd.conf
     # rsyncd.conf just prepared for 4 nodes
     if is_ubuntu; then
         sudo sed -i '/^RSYNC_ENABLE=false/ { s/false/true/ }' /etc/default/rsync
@@ -412,7 +412,7 @@ EOF
     mkdir -p ${swift_log_dir}/hourly
     sudo chown -R $USER:adm ${swift_log_dir}
     sed "s,%SWIFT_LOGDIR%,${swift_log_dir}," $FILES/swift/rsyslog.conf | sudo \
-        tee $INSTALL_PREFIX/etc/rsyslog.d/10-swift.conf
+        tee /etc/rsyslog.d/10-swift.conf
     if is_apache_enabled_service swift; then
         _config_swift_apache_wsgi
     fi
@@ -462,8 +462,8 @@ function create_swift_disk() {
         node_device=${node}/sdb1
         [[ -d $node ]] && continue
         [[ -d $drive ]] && continue
-        sudo install -o ${USER} -g $USER_GROUP -D $drive
-        sudo install -o ${USER} -g $USER_GROUP -D $node_device
+        sudo install -o ${USER} -g $USER_GROUP -d $drive
+        sudo install -o ${USER} -g $USER_GROUP -d $node_device
         sudo chown -R $USER: ${node}
     done
 }
