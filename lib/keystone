@@ -33,7 +33,7 @@ set +o xtrace
 
 # Set up default directories
 KEYSTONE_DIR=$DEST/keystone
-KEYSTONE_CONF_DIR=${KEYSTONE_CONF_DIR:-$INSTALL_PREFIX/etc/keystone}
+KEYSTONE_CONF_DIR=${KEYSTONE_CONF_DIR:-/etc/keystone}
 KEYSTONE_CONF=$KEYSTONE_CONF_DIR/keystone.conf
 KEYSTONE_PASTE_INI=${KEYSTONE_PASTE_INI:-$KEYSTONE_CONF_DIR/keystone-paste.ini}
 KEYSTONE_AUTH_CACHE_DIR=${KEYSTONE_AUTH_CACHE_DIR:-/var/cache/keystone}
@@ -103,7 +103,7 @@ function cleanup_keystone {
 function _cleanup_keystone_apache_wsgi {
     sudo rm -f $KEYSTONE_WSGI_DIR/*.wsgi
     disable_apache_site keystone
-    sudo rm -f $INSTALL_PREFIX/etc/$APACHE_NAME/$APACHE_CONF_DIR/keystone
+    sudo rm -f /etc/$APACHE_NAME/$APACHE_CONF_DIR/keystone
 }
 
 # _config_keystone_apache_wsgi() - Set WSGI config files of Keystone
@@ -114,7 +114,7 @@ function _config_keystone_apache_wsgi {
     sudo cp $KEYSTONE_DIR/httpd/keystone.py $KEYSTONE_WSGI_DIR/main
     sudo cp $KEYSTONE_DIR/httpd/keystone.py $KEYSTONE_WSGI_DIR/admin
 
-    sudo cp $FILES/apache-keystone.template $INSTALL_PREFIX/etc/$APACHE_NAME/$APACHE_CONF_DIR/keystone
+    sudo cp $FILES/apache-keystone.template /etc/$APACHE_NAME/$APACHE_CONF_DIR/keystone
     sudo sed -e "
         s|%PUBLICPORT%|$KEYSTONE_SERVICE_PORT|g;
         s|%ADMINPORT%|$KEYSTONE_AUTH_PORT|g;
@@ -122,7 +122,7 @@ function _config_keystone_apache_wsgi {
         s|%PUBLICWSGI%|$KEYSTONE_WSGI_DIR/main|g;
         s|%ADMINWSGI%|$KEYSTONE_WSGI_DIR/admin|g;
         s|%USER%|$STACK_USER|g
-    " -i $INSTALL_PREFIX/etc/$APACHE_NAME/$APACHE_CONF_DIR/keystone
+    " -i /etc/$APACHE_NAME/$APACHE_CONF_DIR/keystone
     enable_apache_site keystone
 }
 
@@ -391,7 +391,7 @@ function init_keystone {
 function install_keystoneclient {
     git_clone $KEYSTONECLIENT_REPO $KEYSTONECLIENT_DIR $KEYSTONECLIENT_BRANCH
     setup_develop $KEYSTONECLIENT_DIR
-    sudo install -m 0644 -o $STACK_USER {$KEYSTONECLIENT_DIR/tools/,$INSTALL_PREFIX/etc/bash_completion.d/}keystone.bash_completion
+    sudo install -D -m 0644 -o $STACK_USER {$KEYSTONECLIENT_DIR/tools/,/etc/bash_completion.d/}keystone.bash_completion
 }
 
 # install_keystone() - Collect source and prepare

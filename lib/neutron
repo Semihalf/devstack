@@ -81,7 +81,7 @@ else
     NEUTRON_BIN_DIR=$(get_python_exec_prefix)
 fi
 
-NEUTRON_CONF_DIR=$INSTALL_PREFIX/etc/neutron
+NEUTRON_CONF_DIR=/etc/neutron
 NEUTRON_CONF=$NEUTRON_CONF_DIR/neutron.conf
 export NEUTRON_TEST_CONFIG_FILE=${NEUTRON_TEST_CONFIG_FILE:-"$NEUTRON_CONF_DIR/debug.ini"}
 
@@ -452,7 +452,7 @@ function install_neutron {
 function install_neutronclient {
     git_clone $NEUTRONCLIENT_REPO $NEUTRONCLIENT_DIR $NEUTRONCLIENT_BRANCH
     setup_develop $NEUTRONCLIENT_DIR
-    sudo install -m 0644 -o $STACK_USER {$NEUTRONCLIENT_DIR/tools/,$INSTALL_PREFIX/etc/bash_completion.d/}neutron.bash_completion
+    sudo install -D -m 0644 -o $STACK_USER {$NEUTRONCLIENT_DIR/tools/,/etc/bash_completion.d/}neutron.bash_completion
 }
 
 # install_neutron_agent_packages() - Collect source and prepare
@@ -822,7 +822,7 @@ function _neutron_setup_rootwrap {
     echo "$STACK_USER ALL=(root) NOPASSWD: $ROOTWRAP_SUDOER_CMD" >$TEMPFILE
     chmod 0440 $TEMPFILE
     sudo chown root:root $TEMPFILE
-    sudo mv $TEMPFILE $INSTALL_PREFIX/etc/sudoers.d/neutron-rootwrap
+    sudo mv $TEMPFILE /etc/sudoers.d/neutron-rootwrap
 
     # Update the root_helper
     iniset $NEUTRON_CONF agent root_helper "$Q_RR_COMMAND"

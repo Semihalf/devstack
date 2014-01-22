@@ -37,7 +37,7 @@ set +o xtrace
 # Set up default directories
 CEILOMETER_DIR=$DEST/ceilometer
 CEILOMETERCLIENT_DIR=$DEST/python-ceilometerclient
-CEILOMETER_CONF_DIR=$INSTALL_PREFIX/etc/ceilometer
+CEILOMETER_CONF_DIR=/etc/ceilometer
 CEILOMETER_CONF=$CEILOMETER_CONF_DIR/ceilometer.conf
 CEILOMETER_API_LOG_DIR=/var/log/ceilometer-api
 CEILOMETER_AUTH_CACHE_DIR=${CEILOMETER_AUTH_CACHE_DIR:-/var/cache/ceilometer}
