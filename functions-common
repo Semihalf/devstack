@@ -335,6 +335,20 @@ function is_set {
     eval "[ -n \"$var\" ]" # For ex.: sh -c "[ -n \"$var\" ]" would be better, but several exercises depends on this
 }
 
+# Wrapper to account for local host 'install' differences
+function host_install {
+    local inst_src="$1"
+    local inst_dst="$2"
+
+    if is_freebsd; then
+        local inst_arg=""
+    else
+        local inst_arg="-D"
+    fi
+
+    sudo install $inst_arg -m 0644 -o $STACK_USER $inst_src $inst_dst
+}
+
 # Prints line number and "message" in warning format
 # warn $LINENO "message"
 function warn {
