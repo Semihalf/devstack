@@ -1039,6 +1039,21 @@ function is_set() {
 }
 
 
+# Wrapper to account for local host 'install' differences
+function host_install {
+    local inst_src="$1"
+    local inst_dst="$2"
+
+    if is_freebsd; then
+        local inst_arg=""
+    else
+        local inst_arg="-D"
+    fi
+
+    sudo install $inst_arg -m 0644 -o $STACK_USER $inst_src $inst_dst
+}
+
+
 # Wrapper for ``pip install`` to set cache and proxy environment variables
 # Uses globals ``OFFLINE``, ``PIP_DOWNLOAD_CACHE``, ``PIP_USE_MIRRORS``,
 # ``TRACK_DEPENDS``, ``*_proxy``
