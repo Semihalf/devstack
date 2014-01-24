@@ -722,7 +722,13 @@ function inicomment() {
     local file=$1
     local section=$2
     local option=$3
-    sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
+    local sed_re="/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|"
+
+    if is_freebsd; then
+        sed -i '' -e "$sed_re" "$file"
+    else
+        sed -i -e "$sed_re" "$file"
+    fi
 }
 
 
@@ -732,7 +738,13 @@ function iniuncomment() {
     local file=$1
     local section=$2
     local option=$3
-    sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
+    local sed_re="/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|"
+
+    if is_freebsd; then
+        sed -i '' -e "$sed_re" "$file"
+    else
+        sed -i -e "$sed_re" "$file"
+    fi
 }
 
 
@@ -774,12 +786,23 @@ function iniset() {
     fi
     if ! ini_has_option "$file" "$section" "$option"; then
         # Add it
-        sed -i '' -e "/^\[$section\]/ a\\
+        if is_freebsd; then
+            sed -i '' -e "/^\[$section\]/ a\\
 $option = $value
 " "$file"
+        else
+            sed -i -e "/^\[$section\]/ a\\
+$option = $value
+" "$file"
+        fi
     else
         # Replace it
-        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=[ \t]*\).*$|\1$value|" "$file"
+        sed_re="/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=[ \t]*\).*$|\1$value|"
+        if is_freebsd; then
+            sed -i '' -e "$sed_re" "$file"
+        else
+            sed -i -e "$sed_re" "$file"
+        fi
     fi
 }
 
@@ -815,13 +838,24 @@ function iniset_multiline() {
         echo -e "\n[$section]" >>"$file"
     else
         # Remove old values
-        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
+        $sed_re="/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }"
+        if is_freebsd; then
+            sed -i '' -e "$sed_re" "$file"
+        else
+            sed -i -e "$sed_re" "$file"
+        fi
     fi
     # Add new ones
     for v in $values; do
-        sed -i '' -e "/^\[$section\]/ a\\
+        if is_freebsd; then
+            sed -i '' -e "/^\[$section\]/ a\\
 $option = $v
 " "$file"
+        else
+            sed -i -e "/^\[$section\]/ a\\
+$option = $v
+" "$file"
+        fi
     done
 }
 
