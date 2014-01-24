@@ -1121,7 +1121,11 @@ function pip_install {
     # 1.1, the existing extracted build will be used and cause
     # confusing errors.  By creating unique build directories we avoid
     # this problem. See https://github.com/pypa/pip/issues/709
-    local pip_build_tmp=$(mktemp -d pip-build.XXXXX)
+    if is_freebsd; then
+        local pip_build_tmp=$(mktemp -d pip-build.XXXXX)
+    else
+        local pip_build_tmp=$(mktemp --tmpdir -d pip-build.XXXXX)
+    fi
 
     $SUDO_PIP PIP_DOWNLOAD_CACHE=${PIP_DOWNLOAD_CACHE:-/var/cache/pip} \
         HTTP_PROXY=$http_proxy \
