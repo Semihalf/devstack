@@ -62,10 +62,12 @@ function inicomment {
     local file=$1
     local section=$2
     local option=$3
+    local sed_re="/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|"
+    
     if is_freebsd; then
-        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
+        sed -i '' -e $sed_re "$file"
     else
-        sed -i -e "/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|" "$file"
+        sed -i -e $sed_re "$file"
     fi
     $xtrace
 }
@@ -133,18 +135,20 @@ function iniset {
         if is_freebsd; then
             sed -i '' -e "/^\[$section\]/ a\\
 $option = $value
+" "$file"
         else
             sed -i -e "/^\[$section\]/ a\\
 $option = $value
-        fi
 " "$file"
+        fi
     else
         local sep=$(echo -ne "\x01")
         # Replace it
+        local sed_re='/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep}
         if is_freebsd; then
-            sed -i '' -e '/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep} "$file"
+            sed -i '' -e $sed_re "$file"
         else
-            sed -i -e '/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep} "$file"
+            sed -i -e $sed_re "$file"
         fi
     fi
     $xtrace
@@ -171,10 +175,11 @@ function iniset_multiline {
         echo -e "\n[$section]" >>"$file"
     else
         # Remove old values
+        local sed_re="/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }"
         if is_freebsd; then
-            sed -i '' -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
+            sed -i '' -e $sed_re "$file"
         else
-            sed -i -e "/^\[$section\]/,/^\[.*\]/ { /^$option[ \t]*=/ d; }" "$file"
+            sed -i -e $sed_re "$file"
         fi
     fi
     # Add new ones
@@ -182,11 +187,12 @@ function iniset_multiline {
         if is_freebsd; then
             sed -i '' -e "/^\[$section\]/ a\\
 $option = $v
+" "$file"
         else
             sed -i -e "/^\[$section\]/ a\\
 $option = $v
-        fi
 " "$file"
+        fi
     done
     $xtrace
 }
@@ -199,10 +205,11 @@ function iniuncomment {
     local file=$1
     local section=$2
     local option=$3
+    local sed_re="/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|"
     if is_freebsd; then
-        sed -i '' -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
+        sed -i '' -e $sed_re "$file"
     else
-        sed -i -e "/^\[$section\]/,/^\[.*\]/ s|[^ \t]*#[ \t]*\($option[ \t]*=.*$\)|\1|" "$file"
+        sed -i -e $sed_re "$file"
     fi
     $xtrace
 }
