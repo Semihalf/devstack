@@ -3,7 +3,7 @@
 # ``stack.sh`` is an opinionated OpenStack developer installation.  It
 # installs and configures various combinations of **Ceilometer**, **Cinder**,
 # **Glance**, **Heat**, **Horizon**, **Keystone**, **Nova**, **Neutron**,
-# **Swift**, and **Trove**
+# and **Swift**
 
 # This script allows you to specify configuration options of what git
 # repositories to use, enabled services, network configuration and various
@@ -12,7 +12,7 @@
 # developer install.
 
 # To keep this script simple we assume you are running on a recent **Ubuntu**
-# (12.04 Precise or newer) or **Fedora** (F16 or newer) machine.  (It may work
+# (12.04 Precise or newer) or **Fedora** (F18 or newer) machine.  (It may work
 # on other platforms but support for those platforms is left to those who added
 # them to DevStack.)  It should work in a VM or physical server.  Additionally
 # we maintain a list of ``apt`` and ``rpm`` dependencies and other configuration
@@ -22,6 +22,13 @@
 
 # Make sure custom grep options don't get in the way
 unset GREP_OPTIONS
+
+# Sanitize language settings to avoid commands bailing out
+# with "unsupported locale setting" errors.
+unset LANG
+unset LANGUAGE
+LC_ALL=C
+export LC_ALL
 
 # Keep track of the devstack directory
 TOP_DIR=$(cd $(dirname "$0") && pwd)
@@ -131,7 +138,7 @@ disable_negated_services
 
 # Warn users who aren't on an explicitly supported distro, but allow them to
 # override check and attempt installation with ``FORCE=yes ./stack``
-if [[ ! ${DISTRO} =~ (oneiric|precise|quantal|raring|saucy|trusty|7.0|wheezy|sid|testing|jessie|f16|f17|f18|f19|freebsd11|opensuse-12.2|rhel6) ]]; then
+if [[ ! ${DISTRO} =~ (precise|raring|saucy|trusty|7.0|wheezy|sid|testing|jessie|f18|f19|f20|freebsd11|opensuse-12.2|rhel6) ]]; then
     echo "WARNING: this script has not been tested on $DISTRO"
     if [[ "$FORCE" != "yes" ]]; then
         die $LINENO "If you wish to run this script anyway run with FORCE=yes"
@@ -242,6 +249,13 @@ safe_chmod 0755 $DEST
 # a basic test for $DEST path permissions (fatal on error unless skipped)
 check_path_perm_sanity ${DEST}
 
+# Certain services such as rabbitmq require that the local hostname resolves
+# correctly.  Make sure it exists in /etc/hosts so that is always true.
+LOCAL_HOSTNAME=`hostname -s`
+if [ -z "`grep ^127.0.0.1 /etc/hosts | grep $LOCAL_HOSTNAME`" ]; then
+    sudo sed -i "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
+fi
+
 # Set ``OFFLINE`` to ``True`` to configure ``stack.sh`` to run cleanly without
 # Internet access. ``stack.sh`` must have been previously run with Internet
 # access to install prerequisites and fetch repositories.
@@ -269,7 +283,7 @@ safe_chown -R $STACK_USER $DATA_DIR
 # from either range when attempting to guess the IP to use for the host.
 # Note that setting FIXED_RANGE may be necessary when running DevStack
 # in an OpenStack cloud that uses either of these address ranges internally.
-FLOATING_RANGE=${FLOATING_RANGE:-172.24.4.224/28}
+FLOATING_RANGE=${FLOATING_RANGE:-172.24.4.0/24}
 FIXED_RANGE=${FIXED_RANGE:-10.0.0.0/24}
 FIXED_NETWORK_SIZE=${FIXED_NETWORK_SIZE:-256}
 
@@ -293,19 +307,30 @@ SYSLOG_PORT=${SYSLOG_PORT:-516}
 SYSSTAT_FILE=${SYSSTAT_FILE:-"sysstat.dat"}
 SYSSTAT_INTERVAL=${SYSSTAT_INTERVAL:-"1"}
 
+PIDSTAT_FILE=${PIDSTAT_FILE:-"pidstat.txt"}
+PIDSTAT_INTERVAL=${PIDSTAT_INTERVAL:-"5"}
+
 # Use color for logging output (only available if syslog is not used)
 LOG_COLOR=`trueorfalse True $LOG_COLOR`
 
 # Service startup timeout
 SERVICE_TIMEOUT=${SERVICE_TIMEOUT:-60}
 
+# Reset the bundle of CA certificates
+SSL_BUNDLE_FILE="$DATA_DIR/ca-bundle.pem"
+rm -f $SSL_BUNDLE_FILE
+
 
 # Configure Projects
 # ==================
 
-# Source project function libraries
+# Import apache functions
 source $TOP_DIR/lib/apache
+
+# Import TLS functions
 source $TOP_DIR/lib/tls
+
+# Source project function libraries
 source $TOP_DIR/lib/infra
 source $TOP_DIR/lib/oslo
 source $TOP_DIR/lib/stackforge
@@ -321,7 +346,6 @@ source $TOP_DIR/lib/neutron
 source $TOP_DIR/lib/baremetal
 source $TOP_DIR/lib/ldap
 source $TOP_DIR/lib/ironic
-source $TOP_DIR/lib/trove
 
 # Extras Source
 # --------------
@@ -706,16 +730,6 @@ if is_service_enabled nova; then
     configure_nova
 fi
 
-if is_service_enabled n-novnc; then
-    # a websockets/html5 or flash powered VNC console for vm instances
-    git_clone $NOVNC_REPO $NOVNC_DIR $NOVNC_BRANCH
-fi
-
-if is_service_enabled n-spice; then
-    # a websockets/html5 or flash powered SPICE console for vm instances
-    git_clone $SPICE_REPO $SPICE_DIR $SPICE_BRANCH
-fi
-
 if is_service_enabled horizon; then
     # dashboard
     install_horizon
@@ -734,12 +748,6 @@ if is_service_enabled heat; then
     install_heat
     cleanup_heat
     configure_heat
-fi
-
-if is_service_enabled trove; then
-    install_trove
-    install_troveclient
-    cleanup_trove
 fi
 
 if is_service_enabled tls-proxy; then
@@ -769,6 +777,7 @@ fi
 if [[ $TRACK_DEPENDS = True ]]; then
     $DEST/.venv/bin/pip freeze > $DEST/requires-post-pip
     if ! diff -Nru $DEST/requires-pre-pip $DEST/requires-post-pip > $DEST/requires.diff; then
+        echo "Detect some changes for installed packages of pip, in depend tracking mode"
         cat $DEST/requires.diff
     fi
     echo "Ran stack.sh in depend tracking mode, bailing out now"
@@ -820,6 +829,17 @@ fi
 restart_rpc_backend
 
 
+# Export Certicate Authority Bundle
+# ---------------------------------
+
+# If certificates were used and written to the SSL bundle file then these
+# should be exported so clients can validate their connections.
+
+if [ -f $SSL_BUNDLE_FILE ]; then
+    export OS_CACERT=$SSL_BUNDLE_FILE
+fi
+
+
 # Configure database
 # ------------------
 
@@ -859,11 +879,27 @@ init_service_check
 # -------
 # XXX Linux only
 # If enabled, systat has to start early to track OpenStack service startup.
-if is_service_enabled sysstat;then
+if is_service_enabled sysstat; then
+    # what we want to measure
+    # -u : cpu statitics
+    # -q : load
+    # -b : io load rates
+    # -w : process creation and context switch rates
+    SYSSTAT_OPTS="-u -q -b -w"
     if [[ -n ${SCREEN_LOGDIR} ]]; then
-        screen_it sysstat "cd ; sar -o $SCREEN_LOGDIR/$SYSSTAT_FILE $SYSSTAT_INTERVAL"
+        screen_it sysstat "cd $TOP_DIR; ./tools/sar_filter.py $SYSSTAT_OPTS -o $SCREEN_LOGDIR/$SYSSTAT_FILE $SYSSTAT_INTERVAL"
     else
-        screen_it sysstat "sar $SYSSTAT_INTERVAL"
+        screen_it sysstat "./tools/sar_filter.py $SYSSTAT_OPTS $SYSSTAT_INTERVAL"
+    fi
+fi
+
+if is_service_enabled pidstat; then
+    # Per-process stats
+    PIDSTAT_OPTS="-l -p ALL -T ALL"
+    if [[ -n ${SCREEN_LOGDIR} ]]; then
+        screen_it pidstat "cd $TOP_DIR; pidstat $PIDSTAT_OPTS $PIDSTAT_INTERVAL > $SCREEN_LOGDIR/$PIDSTAT_FILE"
+    else
+        screen_it pidstat "pidstat $PIDSTAT_OPTS $PIDSTAT_INTERVAL"
     fi
 fi
 
@@ -896,8 +932,8 @@ if is_service_enabled key; then
     create_cinder_accounts
     create_neutron_accounts
 
-    if is_service_enabled trove; then
-        create_trove_accounts
+    if is_service_enabled ceilometer; then
+        create_ceilometer_accounts
     fi
 
     if is_service_enabled swift || is_service_enabled s-proxy; then
@@ -1096,13 +1132,24 @@ fi
 # Create an access key and secret key for nova ec2 register image
 if is_service_enabled key && is_service_enabled swift3 && is_service_enabled nova; then
     NOVA_USER_ID=$(keystone user-list | grep ' nova ' | get_field 1)
+    die_if_not_set $LINENO NOVA_USER_ID "Failure retrieving NOVA_USER_ID for nova"
     NOVA_TENANT_ID=$(keystone tenant-list | grep " $SERVICE_TENANT_NAME " | get_field 1)
-    CREDS=$(keystone ec2-credentials-create --user_id $NOVA_USER_ID --tenant_id $NOVA_TENANT_ID)
+    die_if_not_set $LINENO NOVA_TENANT_ID "Failure retrieving NOVA_TENANT_ID for $SERVICE_TENANT_NAME"
+    CREDS=$(keystone ec2-credentials-create --user-id $NOVA_USER_ID --tenant-id $NOVA_TENANT_ID)
     ACCESS_KEY=$(echo "$CREDS" | awk '/ access / { print $4 }')
     SECRET_KEY=$(echo "$CREDS" | awk '/ secret / { print $4 }')
     iniset $NOVA_CONF DEFAULT s3_access_key "$ACCESS_KEY"
     iniset $NOVA_CONF DEFAULT s3_secret_key "$SECRET_KEY"
     iniset $NOVA_CONF DEFAULT s3_affix_tenant "True"
+fi
+
+# Create a randomized default value for the keymgr's fixed_key
+if is_service_enabled nova; then
+    FIXED_KEY=""
+    for i in $(seq 1 64);
+        do FIXED_KEY+=$(echo "obase=16; $(($RANDOM % 16))" | bc);
+    done;
+    iniset $NOVA_CONF keymgr fixed_key "$FIXED_KEY"
 fi
 
 if is_service_enabled zeromq; then
@@ -1118,10 +1165,8 @@ fi
 
 if is_service_enabled q-svc; then
     echo_summary "Starting Neutron"
-
     start_neutron_service_and_check
-    create_neutron_initial_network
-    setup_neutron_debug
+    check_neutron_third_party_integration
 elif is_service_enabled $DATABASE_BACKENDS && is_service_enabled n-net; then
     NM_CONF=${NOVA_CONF}
     if is_service_enabled n-cell; then
@@ -1140,6 +1185,12 @@ fi
 
 if is_service_enabled neutron; then
     start_neutron_agents
+fi
+# Once neutron agents are started setup initial network elements
+if is_service_enabled q-svc; then
+    echo_summary "Creating initial neutron network elements"
+    create_neutron_initial_network
+    setup_neutron_debug
 fi
 if is_service_enabled nova; then
     echo_summary "Starting Nova"
@@ -1164,18 +1215,6 @@ if is_service_enabled heat; then
     start_heat
 fi
 
-# Configure and launch the trove service api, and taskmanager
-if is_service_enabled trove; then
-    # Initialize trove
-    echo_summary "Configuring Trove"
-    configure_troveclient
-    configure_trove
-    init_trove
-
-    # Start the trove API and trove taskmgr components
-    echo_summary "Starting Trove"
-    start_trove
-fi
 
 # Create account rc files
 # =======================
@@ -1185,7 +1224,13 @@ fi
 # which is helpful in image bundle steps.
 
 if is_service_enabled nova && is_service_enabled key; then
-    $TOP_DIR/tools/create_userrc.sh -PA --target-dir $TOP_DIR/accrc
+    USERRC_PARAMS="-PA --target-dir $TOP_DIR/accrc"
+
+    if [ -f $SSL_BUNDLE_FILE ]; then
+        USERRC_PARAMS="$USERRC_PARAMS --os-cacert $SSL_BUNDLE_FILE"
+    fi
+
+    $TOP_DIR/tools/create_userrc.sh $USERRC_PARAMS
 fi
 
 
@@ -1200,7 +1245,6 @@ fi
 # See https://help.ubuntu.com/community/CloudInit for more on cloud-init
 #
 # Override ``IMAGE_URLS`` with a comma-separated list of UEC images.
-#  * **oneiric**: http://uec-images.ubuntu.com/oneiric/current/oneiric-server-cloudimg-amd64.tar.gz
 #  * **precise**: http://uec-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64.tar.gz
 
 if is_service_enabled g-reg; then
@@ -1261,7 +1305,7 @@ fi
 CURRENT_RUN_TIME=$(date "+$TIMESTAMP_FORMAT")
 echo "# $CURRENT_RUN_TIME" >$TOP_DIR/.stackenv
 for i in BASE_SQL_CONN ENABLED_SERVICES HOST_IP LOGFILE \
-    SERVICE_HOST SERVICE_PROTOCOL STACK_USER TLS_IP; do
+    SERVICE_HOST SERVICE_PROTOCOL STACK_USER TLS_IP KEYSTONE_AUTH_PROTOCOL OS_CACERT; do
     echo $i=${!i} >>$TOP_DIR/.stackenv
 done
 
@@ -1283,6 +1327,13 @@ if [[ -d $TOP_DIR/extras.d ]]; then
         [[ -r $i ]] && source $i stack extra
     done
 fi
+
+# Local Configuration
+# ===================
+
+# Apply configuration from local.conf if it exists for layer 2 services
+# Phase: post-extra
+merge_config_group $TOP_DIR/local.conf post-extra
 
 
 # Run local script

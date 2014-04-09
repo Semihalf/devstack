@@ -51,7 +51,7 @@ function get_package_path() {
 
 # Fix prettytable 0.7.2 permissions
 # Don't specify --upgrade so we use the existing package if present
-pip_install prettytable
+pip_install 'prettytable>0.7'
 PACKAGE_DIR=$(get_package_path prettytable)
 # Only fix version 0.7.2
 dir=$(echo $PACKAGE_DIR/prettytable-0.7.2*)
@@ -69,6 +69,22 @@ if [[ -d $dir ]]; then
     sudo chmod +r $dir/*
 fi
 
+# Ubuntu 12.04
+# -----
+# We can regularly get kernel crashes on the 12.04 default kernel, so attempt
+# to install a new kernel
+if [[ ${DISTRO} =~ (precise) ]]; then
+    # Finally, because we suspect the Precise kernel is problematic, install a new kernel
+    UPGRADE_KERNEL=$(trueorfalse False $UPGRADE_KERNEL)
+    if [[ $UPGRADE_KERNEL == "True" ]]; then
+        if [[ ! `uname -r` =~ (^3\.11) ]]; then
+            apt_get install linux-generic-lts-saucy
+            echo "Installing Saucy LTS kernel, please reboot before proceeding"
+            exit 1
+        fi
+    fi
+fi
+
 
 # RHEL6
 # -----
@@ -76,8 +92,7 @@ fi
 if [[ $DISTRO =~ (rhel6) ]]; then
 
     # Disable selinux to avoid configuring to allow Apache access
-    # to Horizon files or run nodejs (LP#1175444)
-    # FIXME(dtroyer): see if this can be skipped without node or if Horizon is not enabled
+    # to Horizon files (LP#1175444)
     if selinuxenabled; then
         sudo setenforce 0
     fi

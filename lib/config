@@ -35,7 +35,7 @@ function get_meta_section() {
 
     $CONFIG_AWK_CMD -v matchgroup=$matchgroup -v configfile=$configfile '
         BEGIN { group = "" }
-        /^\[\[.+|.*\]\]/ {
+        /^\[\[.+\|.*\]\]/ {
             if (group == "") {
                 gsub("[][]", "", $1);
                 split($1, a, "|");
@@ -95,7 +95,7 @@ function merge_config_file() {
         /^ *\#/ {
             next
         }
-        /^.+/ {
+        /^[^ \t]+/ {
             split($0, d, " *= *")
             print "iniset " configfile " " section " " d[1] " \"" d[2] "\""
         }

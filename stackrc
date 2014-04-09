@@ -6,6 +6,9 @@ RC_DIR=$(cd $(dirname "${BASH_SOURCE:-$0}") && pwd)
 # Destination path for installation
 DEST=/opt/stack
 
+# Destination for status files
+SERVICE_DIR=${DEST}/status
+
 # Determine stack user
 if [[ $EUID -eq 0 ]]; then
     STACK_USER=stack
@@ -33,6 +36,12 @@ INSTALL_PREFIX=$(get_install_prefix)
 #  # Optional, to enable tempest configuration as part of devstack
 #  enable_service tempest
 ENABLED_SERVICES=g-api,g-reg,key,n-api,n-crt,n-obj,n-cpu,n-net,n-cond,cinder,c-sch,c-api,c-vol,n-sch,n-novnc,n-xvnc,n-cauth,horizon,rabbit,tempest,mysql
+
+# Tell Tempest which services are available.  The default is set here as
+# Tempest falls late in the configuration sequence.  This differs from
+# ``ENABLED_SERVICES`` in that the project names are used here rather than
+# the service names, i.e.: TEMPEST_SERVICES="key,glance,nova"
+TEMPEST_SERVICES=""
 
 # Set the default Nova APIs to enable
 NOVA_ENABLED_APIS=ec2,osapi_compute,metadata
@@ -64,7 +73,7 @@ DATA_DIR=${DEST}/data
 
 # Base GIT Repo URL
 # Another option is http://review.openstack.org/p
-GIT_BASE=${GIT_BASE:-https://github.com}
+GIT_BASE=${GIT_BASE:-git://git.openstack.org}
 
 # metering service
 CEILOMETER_REPO=${CEILOMETER_REPO:-${GIT_BASE}/openstack/ceilometer.git}
@@ -138,6 +147,10 @@ OSLOCFG_BRANCH=${OSLOCFG_BRANCH:-master}
 OSLOMSG_REPO=${OSLOMSG_REPO:-${GIT_BASE}/openstack/oslo.messaging.git}
 OSLOMSG_BRANCH=${OSLOMSG_BRANCH:-master}
 
+# oslo.rootwrap
+OSLORWRAP_REPO=${OSLORWRAP_REPO:-${GIT_BASE}/openstack/oslo.rootwrap.git}
+OSLORWRAP_BRANCH=${OSLORWRAP_BRANCH:-master}
+
 # pbr drives the setuptools configs
 PBR_REPO=${PBR_REPO:-${GIT_BASE}/openstack-dev/pbr.git}
 PBR_BRANCH=${PBR_BRANCH:-master}
@@ -180,11 +193,11 @@ BM_POSEUR_REPO=${BM_POSEUR_REPO:-${GIT_BASE}/tripleo/bm_poseur.git}
 BM_POSEUR_BRANCH=${BM_POSEUR_BRANCH:-master}
 
 # a websockets/html5 or flash powered VNC console for vm instances
-NOVNC_REPO=${NOVNC_REPO:-${GIT_BASE}/kanaka/noVNC.git}
+NOVNC_REPO=${NOVNC_REPO:-https://github.com/kanaka/noVNC.git}
 NOVNC_BRANCH=${NOVNC_BRANCH:-master}
 
 # ryu service
-RYU_REPO=${RYU_REPO:-${GIT_BASE}/osrg/ryu.git}
+RYU_REPO=${RYU_REPO:-https://github.com/osrg/ryu.git}
 RYU_BRANCH=${RYU_BRANCH:-master}
 
 # a websockets/html5 or flash powered SPICE console for vm instances
@@ -281,11 +294,18 @@ case "$VIRT_DRIVER" in
     vsphere)
         DEFAULT_IMAGE_NAME=${DEFAULT_IMAGE_NAME:-debian-2.6.32-i686}
         IMAGE_URLS=${IMAGE_URLS:-"http://partnerweb.vmware.com/programs/vmdkimage/debian-2.6.32-i686.vmdk"};;
+    xenserver)
+        DEFAULT_IMAGE_NAME=${DEFAULT_IMAGE_NAME:-cirros-0.3.0-x86_64-disk}
+        IMAGE_URLS=${IMAGE_URLS:-"https://github.com/downloads/citrix-openstack/warehouse/cirros-0.3.0-x86_64-disk.vhd.tgz"};;
     *) # Default to Cirros with kernel, ramdisk and disk image
         DEFAULT_IMAGE_NAME=${DEFAULT_IMAGE_NAME:-cirros-0.3.1-x86_64-uec}
         IMAGE_URLS=${IMAGE_URLS:-"http://download.cirros-cloud.net/0.3.1/cirros-0.3.1-x86_64-uec.tar.gz"};;
 esac
 
+HEAT_FETCHED_TEST_IMAGE=${HEAT_FETCHED_TEST_IMAGE:-""}
+if [[ "$HEAT_FETCHED_TEST_IMAGE" == "Fedora-i386-20-20131211.1-sda" ]]; then
+    IMAGE_URLS+=",https://dl.fedoraproject.org/pub/fedora/linux/releases/20/Images/i386/$HEAT_FETCHED_TEST_IMAGE.qcow2"
+fi
 
 # 10Gb default volume backing file size
 VOLUME_BACKING_FILE_SIZE=${VOLUME_BACKING_FILE_SIZE:-10250M}

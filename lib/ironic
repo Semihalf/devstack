@@ -33,7 +33,6 @@ IRONIC_AUTH_CACHE_DIR=${IRONIC_AUTH_CACHE_DIR:-/var/cache/ironic}
 IRONIC_CONF_DIR=${IRONIC_CONF_DIR:-/etc/ironic}
 IRONIC_CONF_FILE=$IRONIC_CONF_DIR/ironic.conf
 IRONIC_ROOTWRAP_CONF=$IRONIC_CONF_DIR/rootwrap.conf
-IRONIC_ROOTWRAP_FILTERS=$IRONIC_CONF_DIR/rootwrap.d
 IRONIC_POLICY_JSON=$IRONIC_CONF_DIR/policy.json
 
 # Support entry points installation of console scripts
@@ -42,6 +41,9 @@ IRONIC_BIN_DIR=$(get_python_exec_prefix)
 # Ironic connection info.  Note the port must be specified.
 IRONIC_SERVICE_PROTOCOL=http
 IRONIC_HOSTPORT=${IRONIC_HOSTPORT:-$SERVICE_HOST:6385}
+
+# Tell Tempest this project is present
+TEMPEST_SERVICES+=,ironic
 
 
 # Functions
@@ -98,6 +100,7 @@ function configure_ironic_api() {
     iniset $IRONIC_CONF_FILE keystone_authtoken auth_host $KEYSTONE_AUTH_HOST
     iniset $IRONIC_CONF_FILE keystone_authtoken auth_port $KEYSTONE_AUTH_PORT
     iniset $IRONIC_CONF_FILE keystone_authtoken auth_protocol $KEYSTONE_AUTH_PROTOCOL
+    iniset $IRONIC_CONF_FILE keystone_authtoken cafile $KEYSTONE_SSL_CA
     iniset $IRONIC_CONF_FILE keystone_authtoken auth_uri $KEYSTONE_SERVICE_PROTOCOL://$KEYSTONE_SERVICE_HOST:$KEYSTONE_SERVICE_PORT/
     iniset $IRONIC_CONF_FILE keystone_authtoken admin_tenant_name $SERVICE_TENANT_NAME
     iniset $IRONIC_CONF_FILE keystone_authtoken admin_user ironic
@@ -117,7 +120,7 @@ function configure_ironic_api() {
 # Sets conductor specific settings.
 function configure_ironic_conductor() {
     cp $IRONIC_DIR/etc/ironic/rootwrap.conf $IRONIC_ROOTWRAP_CONF
-    cp -r $IRONIC_DIR/etc/ironic/rootwrap.d $IRONIC_ROOTWRAP_FILTERS
+    cp -r $IRONIC_DIR/etc/ironic/rootwrap.d $IRONIC_CONF_DIR
 
     iniset $IRONIC_CONF DEFAULT rootwrap_config $IRONIC_ROOTWRAP_CONF
 }
@@ -148,11 +151,11 @@ create_ironic_accounts() {
         IRONIC_USER=$(keystone user-create \
             --name=ironic \
             --pass="$SERVICE_PASSWORD" \
-            --tenant_id $SERVICE_TENANT \
+            --tenant-id $SERVICE_TENANT \
             --email=ironic@example.com \
             | grep " id " | get_field 2)
         keystone user-role-add \
-            --tenant_id $SERVICE_TENANT \
+            --tenant-id $SERVICE_TENANT \
             --user_id $IRONIC_USER \
             --role_id $ADMIN_ROLE
         if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then

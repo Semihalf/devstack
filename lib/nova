@@ -73,9 +73,6 @@ SCHEDULER=${SCHEDULER:-nova.scheduler.filter_scheduler.FilterScheduler}
 
 QEMU_CONF=$INSTALL_PREFIX/etc/libvirt/qemu.conf
 
-NOVNC_DIR=$DEST/noVNC
-SPICE_DIR=$DEST/spice-html5
-
 # Set default defaults here as some hypervisor drivers override these
 PUBLIC_INTERFACE_DEFAULT=br100
 GUEST_INTERFACE_DEFAULT=eth0
@@ -124,6 +121,9 @@ MULTI_HOST=`trueorfalse False $MULTI_HOST`
 # here until the admin APIs can replace nova-manage
 TEST_FLOATING_POOL=${TEST_FLOATING_POOL:-test}
 TEST_FLOATING_RANGE=${TEST_FLOATING_RANGE:-192.168.253.0/29}
+
+# Tell Tempest this project is present
+TEMPEST_SERVICES+=,nova
 
 
 # Functions
@@ -210,7 +210,7 @@ function configure_nova_rootwrap() {
 
     # Set up the rootwrap sudoers for nova
     TEMPFILE=`mktemp`
-    echo "$USER ALL=(root) NOPASSWD: $ROOTWRAP_SUDOER_CMD" >$TEMPFILE
+    echo "$STACK_USER ALL=(root) NOPASSWD: $ROOTWRAP_SUDOER_CMD" >$TEMPFILE
     chmod 0440 $TEMPFILE
     sudo chown root:$root_group $TEMPFILE
     sudo mv $TEMPFILE $INSTALL_PREFIX/etc/sudoers.d/nova-rootwrap
@@ -238,10 +238,9 @@ function configure_nova() {
         # Comment out the keystone configs in Nova's api-paste.ini.
         # We are using nova.conf to configure this instead.
         inicomment $NOVA_API_PASTE_INI filter:authtoken auth_host
-        if is_service_enabled tls-proxy; then
-            inicomment $NOVA_API_PASTE_INI filter:authtoken auth_protocol
-        fi
+        inicomment $NOVA_API_PASTE_INI filter:authtoken auth_protocol
         inicomment $NOVA_API_PASTE_INI filter:authtoken admin_tenant_name
+        inicomment $NOVA_API_PASTE_INI filter:authtoken cafile
         inicomment $NOVA_API_PASTE_INI filter:authtoken admin_user
         inicomment $NOVA_API_PASTE_INI filter:authtoken admin_password
     fi
@@ -340,7 +339,7 @@ create_nova_accounts() {
         NOVA_USER=$(keystone user-create \
             --name=nova \
             --pass="$SERVICE_PASSWORD" \
-            --tenant_id $SERVICE_TENANT \
+            --tenant-id $SERVICE_TENANT \
             --email=nova@example.com \
             | grep " id " | get_field 2)
         keystone user-role-add \
@@ -360,7 +359,7 @@ create_nova_accounts() {
                 --adminurl "$NOVA_SERVICE_PROTOCOL://$NOVA_SERVICE_HOST:$NOVA_SERVICE_PORT/v2/\$(tenant_id)s" \
                 --internalurl "$NOVA_SERVICE_PROTOCOL://$NOVA_SERVICE_HOST:$NOVA_SERVICE_PORT/v2/\$(tenant_id)s"
             NOVA_V3_SERVICE=$(keystone service-create \
-                --name=nova \
+                --name=novav3 \
                 --type=computev3 \
                 --description="Nova Compute Service V3" \
                 | grep " id " | get_field 2)
@@ -399,8 +398,8 @@ function create_nova_conf() {
     iniset $NOVA_CONF DEFAULT osapi_compute_workers "4"
     iniset $NOVA_CONF DEFAULT ec2_workers "4"
     iniset $NOVA_CONF DEFAULT metadata_workers "4"
+    iniset $NOVA_CONF conductor workers "4"
     iniset $NOVA_CONF DEFAULT sql_connection `database_connection_url nova`
-    iniset $NOVA_CONF DEFAULT fatal_deprecations "True"
     iniset $NOVA_CONF DEFAULT instance_name_template "${INSTANCE_NAME_PREFIX}%08x"
     iniset $NOVA_CONF osapi_v3 enabled "True"
 
@@ -433,10 +432,10 @@ function create_nova_conf() {
         # Add keystone authtoken configuration
 
         iniset $NOVA_CONF keystone_authtoken auth_host $KEYSTONE_AUTH_HOST
-        if is_service_enabled tls-proxy; then
-            iniset $NOVA_CONF keystone_authtoken auth_protocol $KEYSTONE_AUTH_PROTOCOL
-        fi
+        iniset $NOVA_CONF keystone_authtoken auth_port $KEYSTONE_AUTH_PORT
+        iniset $NOVA_CONF keystone_authtoken auth_protocol $KEYSTONE_AUTH_PROTOCOL
         iniset $NOVA_CONF keystone_authtoken admin_tenant_name $SERVICE_TENANT_NAME
+        iniset $NOVA_CONF keystone_authtoken cafile $KEYSTONE_SSL_CA
         iniset $NOVA_CONF keystone_authtoken admin_user nova
         iniset $NOVA_CONF keystone_authtoken admin_password $SERVICE_PASSWORD
     fi
@@ -630,6 +629,30 @@ function install_nova() {
         install_nova_hypervisor
     fi
 
+    if is_service_enabled n-novnc; then
+        # a websockets/html5 or flash powered VNC console for vm instances
+        NOVNC_FROM_PACKAGE=`trueorfalse False $NOVNC_FROM_PACKAGE`
+        if [ "$NOVNC_FROM_PACKAGE" = "True" ]; then
+            NOVNC_WEB_DIR=/usr/share/novnc
+            install_package novnc
+        else
+            NOVNC_WEB_DIR=$DEST/noVNC
+            git_clone $NOVNC_REPO $NOVNC_WEB_DIR $NOVNC_BRANCH
+        fi
+    fi
+
+    if is_service_enabled n-spice; then
+        # a websockets/html5 or flash powered SPICE console for vm instances
+        SPICE_FROM_PACKAGE=`trueorfalse True $SPICE_FROM_PACKAGE`
+        if [ "$SPICE_FROM_PACKAGE" = "True" ]; then
+            SPICE_WEB_DIR=/usr/share/spice-html5
+            install_package spice-html5
+        else
+            SPICE_WEB_DIR=$DEST/spice-html5
+            git_clone $SPICE_REPO $SPICE_WEB_DIR $SPICE_BRANCH
+        fi
+    fi
+
     git_clone $NOVA_REPO $NOVA_DIR $NOVA_BRANCH
     setup_develop $NOVA_DIR
 
@@ -669,12 +692,23 @@ function start_nova_compute() {
     fi
 
     if [[ "$VIRT_DRIVER" = 'libvirt' ]]; then
+        # Enable client side traces for libvirt
+        local log_filters="1:libvirt 1:qemu 1:conf 1:security 3:event 3:json 3:file 1:util"
+        local log_outputs="1:file:/var/log/libvirt/libvirtd.log"
+        # Enable server side traces for libvirtd
+        if ! grep -q "log_filters=\"$log_filters\"" /etc/libvirt/libvirtd.conf; then
+            echo "log_filters=\"$log_filters\"" | sudo tee -a /etc/libvirt/libvirtd.conf
+        fi
+        if ! grep -q "log_outputs=\"$log_outputs\"" /etc/libvirt/libvirtd.conf; then
+            echo "log_outputs=\"$log_outputs\"" | sudo tee -a /etc/libvirt/libvirtd.conf
+        fi
+
         # The group **$LIBVIRT_GROUP** is added to the current user in this script.
         # Use 'sg' to execute nova-compute as a member of the **$LIBVIRT_GROUP** group.
         screen_it n-cpu "cd $NOVA_DIR && sg $LIBVIRT_GROUP '$NOVA_BIN_DIR/nova-compute --config-file $compute_cell_conf'"
     elif [[ "$VIRT_DRIVER" = 'fake' ]]; then
         for i in `seq 1 $NUMBER_FAKE_NOVA_COMPUTE`; do
-            screen_it n-cpu "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-compute --config-file $compute_cell_conf"
+            screen_it n-cpu "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-compute --config-file $compute_cell_conf --config-file <(echo -e '[DEFAULT]\nhost=${HOSTNAME}${i}')"
         done
     else
         if is_service_enabled n-cpu && [[ -r $NOVA_PLUGINS/hypervisor-$VIRT_DRIVER ]]; then
@@ -686,32 +720,32 @@ function start_nova_compute() {
 
 # start_nova() - Start running processes, including screen
 function start_nova_rest() {
-    NOVA_CONF_BOTTOM=$NOVA_CONF
-
-    # ``screen_it`` checks ``is_service_enabled``, it is not needed here
-    screen_it n-cond "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-conductor"
-
+    local api_cell_conf=$NOVA_CONF
     if is_service_enabled n-cell; then
-        NOVA_CONF_BOTTOM=$NOVA_CELLS_CONF
-        screen_it n-cond "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-conductor --config-file $NOVA_CELLS_CONF"
-        screen_it n-cell-region "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-cells --config-file $NOVA_CONF"
-        screen_it n-cell-child "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-cells --config-file $NOVA_CELLS_CONF"
+        local compute_cell_conf=$NOVA_CELLS_CONF
+    else
+        local compute_cell_conf=$NOVA_CONF
     fi
 
-    screen_it n-crt "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-cert"
-    screen_it n-net "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-network --config-file $NOVA_CONF_BOTTOM"
-    screen_it n-sch "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-scheduler --config-file $NOVA_CONF_BOTTOM"
-    screen_it n-api-meta "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-api-metadata --config-file $NOVA_CONF_BOTTOM"
+    # ``screen_it`` checks ``is_service_enabled``, it is not needed here
+    screen_it n-cond "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-conductor --config-file $compute_cell_conf"
+    screen_it n-cell-region "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-cells --config-file $api_cell_conf"
+    screen_it n-cell-child "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-cells --config-file $compute_cell_conf"
 
-    screen_it n-novnc "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-novncproxy --config-file $NOVA_CONF --web $NOVNC_DIR"
-    screen_it n-xvnc "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-xvpvncproxy --config-file $NOVA_CONF"
-    screen_it n-spice "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-spicehtml5proxy --config-file $NOVA_CONF --web $SPICE_DIR"
-    screen_it n-cauth "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-consoleauth"
+    screen_it n-crt "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-cert --config-file $api_cell_conf"
+    screen_it n-net "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-network --config-file $compute_cell_conf"
+    screen_it n-sch "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-scheduler --config-file $compute_cell_conf"
+    screen_it n-api-meta "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-api-metadata --config-file $compute_cell_conf"
+
+    screen_it n-novnc "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-novncproxy --config-file $api_cell_conf --web $NOVNC_WEB_DIR"
+    screen_it n-xvnc "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-xvpvncproxy --config-file $api_cell_conf"
+    screen_it n-spice "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-spicehtml5proxy --config-file $api_cell_conf --web $SPICE_WEB_DIR"
+    screen_it n-cauth "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-consoleauth --config-file $api_cell_conf"
 
     # Starting the nova-objectstore only if swift3 service is not enabled.
     # Swift will act as s3 objectstore.
     is_service_enabled swift3 || \
-        screen_it n-obj "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-objectstore"
+        screen_it n-obj "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-objectstore --config-file $api_cell_conf"
 }
 
 function start_nova() {
@@ -724,8 +758,8 @@ function stop_nova() {
     # Kill the nova screen windows
     # Some services are listed here twice since more than one instance
     # of a service may be running in certain configs.
-    for serv in n-api n-cpu n-crt n-net n-sch n-novnc n-xvnc n-cauth n-spice n-cond n-cond n-cell n-cell n-api-meta; do
-        screen -S $SCREEN_NAME -p $serv -X kill
+    for serv in n-api n-cpu n-crt n-net n-sch n-novnc n-xvnc n-cauth n-spice n-cond n-cell n-cell n-api-meta; do
+        screen_stop $serv
     done
     if is_service_enabled n-cpu && [[ -r $NOVA_PLUGINS/hypervisor-$VIRT_DRIVER ]]; then
         stop_nova_hypervisor

@@ -30,7 +30,7 @@ You can also pick specific OpenStack project releases by setting the appropriate
 `stackrc` for the default set).  Usually just before a release there will be
 milestone-proposed branches that need to be tested::
 
-    GLANCE_REPO=https://github.com/openstack/glance.git
+    GLANCE_REPO=git://git.openstack.org/openstack/glance.git
     GLANCE_BRANCH=milestone-proposed
 
 # Start A Dev Cloud
@@ -82,7 +82,7 @@ for example).
 # Customizing
 
 You can override environment variables used in `stack.sh` by creating file
-name `local.conf` with a ``locarc`` section as shown below.  It is likely
+name `local.conf` with a ``localrc`` section as shown below.  It is likely
 that you will need to do this to tweak your networking configuration should
 you need to access your cloud from a different host.
 
@@ -171,6 +171,7 @@ following settings in your `localrc` section:
     enable_service q-dhcp
     enable_service q-l3
     enable_service q-meta
+    enable_service q-metering
     enable_service neutron
     # Optional, to enable tempest configuration as part of DevStack
     enable_service tempest
@@ -326,6 +327,7 @@ The defined phases are:
 * **local** - extracts ``localrc`` from ``local.conf`` before ``stackrc`` is sourced
 * **post-config** - runs after the layer 2 services are configured and before they are started
 * **extra** - runs after services are started and before any files in ``extra.d`` are executed
+* **post-extra** - runs after files in ``extra.d`` are executed
 
 The file is processed strictly in sequence; meta-sections may be specified more than once but if any settings are duplicated the last to appear in the file will be used.
 

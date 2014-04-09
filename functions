@@ -463,6 +463,7 @@ GetOSVersion() {
         os_CODENAME=$(lsb_release -c -s)
     elif [[ -r /etc/redhat-release ]]; then
         # Red Hat Enterprise Linux Server release 5.5 (Tikanga)
+        # Red Hat Enterprise Linux Server release 7.0 Beta (Maipo)
         # CentOS release 5.5 (Final)
         # CentOS Linux release 6.0 (Final)
         # Fedora release 16 (Verne)
@@ -471,7 +472,7 @@ GetOSVersion() {
         for r in "Red Hat" CentOS Fedora XenServer; do
             os_VENDOR=$r
             if [[ -n "`grep \"$r\" /etc/redhat-release`" ]]; then
-                ver=`sed -e 's/^.* \(.*\) (\(.*\)).*$/\1\|\2/' /etc/redhat-release`
+                ver=`sed -e 's/^.* \([0-9].*\) (\(.*\)).*$/\1\|\2/' /etc/redhat-release`
                 os_CODENAME=${ver#*|}
                 os_RELEASE=${ver%|*}
                 os_UPDATE=${os_RELEASE##*.}
@@ -605,7 +606,19 @@ function exit_distro_not_supported {
 function is_arch {
     ARCH_TYPE=$1
 
-    [ "($uname -m)" = "$ARCH_TYPE" ]
+    [[ "$(uname -m)" == "$ARCH_TYPE" ]]
+}
+
+# Checks if installed Apache is <= given version
+# $1 = x.y.z (version string of Apache)
+function check_apache_version {
+    local cmd="apachectl"
+    if ! [[ -x $(which apachectl 2>/dev/null) ]]; then
+        cmd="/usr/sbin/apachectl"
+    fi
+
+    local version=$($cmd -v | grep version | grep -Po 'Apache/\K[^ ]*')
+    expr "$version" '>=' $1 > /dev/null
 }
 
 # git clone only if directory doesn't exist already.  Since ``DEST`` might not
@@ -780,6 +793,8 @@ function iniset() {
     local option=$3
     local value=$4
 
+    [[ -z $section || -z $option ]] && return
+
     if ! grep -q "^\[$section\]" "$file" 2>/dev/null; then
         # Add section at the end
         echo -e "\n[$section]" >>"$file"
@@ -796,8 +811,9 @@ $option = $value
 " "$file"
         fi
     else
+        local sep=$(echo -ne "\x01")
         # Replace it
-        sed_re="/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=[ \t]*\).*$|\1$value|"
+        sed_re='/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep}
         if is_freebsd; then
             sed -i '' -e "$sed_re" "$file"
         else
@@ -914,6 +930,7 @@ function is_service_enabled() {
         [[ ${service} == "cinder" && ${ENABLED_SERVICES} =~ "c-" ]] && return 0
         [[ ${service} == "ceilometer" && ${ENABLED_SERVICES} =~ "ceilometer-" ]] && return 0
         [[ ${service} == "glance" && ${ENABLED_SERVICES} =~ "g-" ]] && return 0
+        [[ ${service} == "ironic" && ${ENABLED_SERVICES} =~ "ir-" ]] && return 0
         [[ ${service} == "neutron" && ${ENABLED_SERVICES} =~ "q-" ]] && return 0
         [[ ${service} == "trove" && ${ENABLED_SERVICES} =~ "tr-" ]] && return 0
         [[ ${service} == "swift" && ${ENABLED_SERVICES} =~ "s-" ]] && return 0
@@ -1226,10 +1243,42 @@ function screen_it {
             sleep 1.5
 
             NL=`echo -ne '\015'`
-            screen -S $SCREEN_NAME -p $1 -X stuff "$2 || echo \"$1 failed to start\" | tee \"$SERVICE_DIR/$SCREEN_NAME/$1.failure\"$NL"
+            # This fun command does the following:
+            # - the passed server command is backgrounded
+            # - the pid of the background process is saved in the usual place
+            # - the server process is brought back to the foreground
+            # - if the server process exits prematurely the fg command errors
+            #   and a message is written to stdout and the service failure file
+            # The pid saved can be used in screen_stop() as a process group
+            # id to kill off all child processes
+            screen -S $SCREEN_NAME -p $1 -X stuff "$2 & echo \$! >$SERVICE_DIR/$SCREEN_NAME/$1.pid; fg || echo \"$1 failed to start\" | tee \"$SERVICE_DIR/$SCREEN_NAME/$1.failure\"$NL"
         else
             # Spawn directly without screen
-            run_process "$1" "$2" >$SERVICE_DIR/$SCREEN_NAME/$service.pid
+            run_process "$1" "$2" >$SERVICE_DIR/$SCREEN_NAME/$1.pid
+        fi
+    fi
+}
+
+
+# Stop a service in screen
+# If a PID is available use it, kill the whole process group via TERM
+# If screen is being used kill the screen window; this will catch processes
+# that did not leave a PID behind
+# screen_stop service
+function screen_stop() {
+    SCREEN_NAME=${SCREEN_NAME:-stack}
+    SERVICE_DIR=${SERVICE_DIR:-${DEST}/status}
+    USE_SCREEN=$(trueorfalse True $USE_SCREEN)
+
+    if is_service_enabled $1; then
+        # Kill via pid if we have one available
+        if [[ -r $SERVICE_DIR/$SCREEN_NAME/$1.pid ]]; then
+            pkill -TERM -P -$(cat $SERVICE_DIR/$SCREEN_NAME/$1.pid)
+            rm $SERVICE_DIR/$SCREEN_NAME/$1.pid
+        fi
+        if [[ "$USE_SCREEN" = "True" ]]; then
+            # Clean up the screen window
+            screen -S $SCREEN_NAME -p $1 -X kill
         fi
     fi
 }
@@ -1254,6 +1303,11 @@ function screen_rc {
         NL=`echo -ne '\015'`
         echo "screen -t $1 bash" >> $SCREENRC
         echo "stuff \"$2$NL\"" >> $SCREENRC
+
+        if [[ -n ${SCREEN_LOGDIR} ]]; then
+            echo "logfile ${SCREEN_LOGDIR}/screen-${1}.${CURRENT_LOG_TIME}.log" >>$SCREENRC
+            echo "log on" >>$SCREENRC
+        fi
     fi
 }
 
@@ -1353,7 +1407,11 @@ function safe_chmod() {
 
 # ``pip install -e`` the package, which processes the dependencies
 # using pip before running `setup.py develop`
-# Uses globals ``STACK_USER``, ``TRACK_DEPENDS``, ``REQUIREMENTS_DIR``
+#
+# Updates the dependencies in project_dir from the
+# openstack/requirements global list before installing anything.
+#
+# Uses globals ``TRACK_DEPENDS``, ``REQUIREMENTS_DIR``
 # setup_develop directory
 function setup_develop() {
     local project_dir=$1
@@ -1361,7 +1419,8 @@ function setup_develop() {
     echo "cd $REQUIREMENTS_DIR; $SUDO_CMD python update.py $project_dir"
 
     # Don't update repo if local changes exist
-    (cd $project_dir && git diff --quiet)
+    # Don't use buggy "git diff --quiet"
+    (cd $project_dir && git diff --exit-code >/dev/null)
     local update_requirements=$?
 
     if [ $update_requirements -eq 0 ]; then
@@ -1369,9 +1428,7 @@ function setup_develop() {
             $SUDO_CMD python update.py $project_dir)
     fi
 
-    pip_install -e $project_dir
-    # ensure that further actions can do things like setup.py sdist
-    safe_chown -R $STACK_USER $1/*.egg-info
+    setup_develop_no_requirements_update $project_dir
 
     # We've just gone and possibly modified the user's source tree in an
     # automated way, which is considered bad form if it's a development
@@ -1386,6 +1443,18 @@ function setup_develop() {
             (cd $project_dir && git reset --hard)
         fi
     fi
+}
+
+# ``pip install -e`` the package, which processes the dependencies
+# using pip before running `setup.py develop`
+# Uses globals ``STACK_USER``
+# setup_develop_no_requirements_update directory
+function setup_develop_no_requirements_update() {
+    local project_dir=$1
+
+    pip_install -e $project_dir
+    # ensure that further actions can do things like setup.py sdist
+    safe_chown -R $STACK_USER $1/*.egg-info
 }
 
 
@@ -1439,12 +1508,24 @@ function upload_image() {
 
     # Create a directory for the downloaded image tarballs.
     mkdir -p $FILES/images
-
-    # Downloads the image (uec ami+aki style), then extracts it.
     IMAGE_FNAME=`basename "$image_url"`
-    if [[ ! -f $FILES/$IMAGE_FNAME || "$(stat -c "%s" $FILES/$IMAGE_FNAME)" = "0" ]]; then
-        wget -c $image_url -O $FILES/$IMAGE_FNAME
-        if [[ $? -ne 0 ]]; then
+    if [[ $image_url != file* ]]; then
+        # Downloads the image (uec ami+aki style), then extracts it.
+        if [[ ! -f $FILES/$IMAGE_FNAME || "$(stat -c "%s" $FILES/$IMAGE_FNAME)" = "0" ]]; then
+            wget -c $image_url -O $FILES/$IMAGE_FNAME
+            if [[ $? -ne 0 ]]; then
+                echo "Not found: $image_url"
+                return
+            fi
+        fi
+        IMAGE="$FILES/${IMAGE_FNAME}"
+    else
+        # File based URL (RFC 1738): file://host/path
+        # Remote files are not considered here.
+        # *nix: file:///home/user/path/file
+        # windows: file:///C:/Documents%20and%20Settings/user/path/file
+        IMAGE=$(echo $image_url | sed "s/^file:\/\///g")
+        if [[ ! -f $IMAGE || "$(stat -c "%s" $IMAGE)" == "0" ]]; then
             echo "Not found: $image_url"
             return
         fi
@@ -1452,7 +1533,6 @@ function upload_image() {
 
     # OpenVZ-format images are provided as .tar.gz, but not decompressed prior to loading
     if [[ "$image_url" =~ 'openvz' ]]; then
-        IMAGE="$FILES/${IMAGE_FNAME}"
         IMAGE_NAME="${IMAGE_FNAME%.tar.gz}"
         glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME" --is-public=True --container-format ami --disk-format ami < "${IMAGE}"
         return
@@ -1460,25 +1540,129 @@ function upload_image() {
 
     # vmdk format images
     if [[ "$image_url" =~ '.vmdk' ]]; then
-        IMAGE="$FILES/${IMAGE_FNAME}"
         IMAGE_NAME="${IMAGE_FNAME%.vmdk}"
 
         # Before we can upload vmdk type images to glance, we need to know it's
         # disk type, storage adapter, and networking adapter. These values are
-        # passed to glance as custom properties. We take these values from the
+        # passed to glance as custom properties.
+        # We take these values from the vmdk file if populated. Otherwise, we use
         # vmdk filename, which is expected in the following format:
         #
-        #     <name>-<disk type>:<storage adapter>:<network adapter>
+        #     <name>-<disk type>;<storage adapter>;<network adapter>
         #
         # If the filename does not follow the above format then the vsphere
         # driver will supply default values.
-        property_string=`echo "$IMAGE_NAME" | grep -oP '(?<=-)(?!.*-).+:.+:.+$'`
-        if [[ ! -z "$property_string" ]]; then
-            IFS=':' read -a props <<< "$property_string"
-            vmdk_disktype="${props[0]}"
-            vmdk_adapter_type="${props[1]}"
-            vmdk_net_adapter="${props[2]}"
+
+        vmdk_adapter_type=""
+        vmdk_disktype=""
+        vmdk_net_adapter=""
+
+        # vmdk adapter type
+        vmdk_adapter_type="$(head -25 $IMAGE | grep -a -F -m 1 'ddb.adapterType =' $IMAGE)"
+        vmdk_adapter_type="${vmdk_adapter_type#*\"}"
+        vmdk_adapter_type="${vmdk_adapter_type%?}"
+
+        # vmdk disk type
+        vmdk_create_type="$(head -25 $IMAGE | grep -a -F -m 1 'createType=' $IMAGE)"
+        vmdk_create_type="${vmdk_create_type#*\"}"
+        vmdk_create_type="${vmdk_create_type%?}"
+
+        descriptor_data_pair_msg="Monolithic flat and VMFS disks "`
+                                    `"should use a descriptor-data pair."
+        if [[ "$vmdk_create_type" = "monolithicSparse" ]]; then
+            vmdk_disktype="sparse"
+        elif [[ "$vmdk_create_type" = "monolithicFlat" || \
+        "$vmdk_create_type" = "vmfs" ]]; then
+            # Attempt to retrieve the *-flat.vmdk
+            flat_fname="$(head -25 $IMAGE | grep -G 'RW\|RDONLY [0-9]+ FLAT\|VMFS' $IMAGE)"
+            flat_fname="${flat_fname#*\"}"
+            flat_fname="${flat_fname%?}"
+            if [[ -z "$flat_name" ]]; then
+                flat_fname="$IMAGE_NAME-flat.vmdk"
+            fi
+            path_len=`expr ${#image_url} - ${#IMAGE_FNAME}`
+            flat_url="${image_url:0:$path_len}$flat_fname"
+            warn $LINENO "$descriptor_data_pair_msg"`
+                            `" Attempt to retrieve the *-flat.vmdk: $flat_url"
+            if [[ $flat_url != file* ]]; then
+                if [[ ! -f $FILES/$flat_fname || \
+                "$(stat -c "%s" $FILES/$flat_fname)" = "0" ]]; then
+                    wget -c $flat_url -O $FILES/$flat_fname
+                    if [[ $? -ne 0 ]]; then
+                        echo "Flat disk not found: $flat_url"
+                        flat_found=false
+                    fi
+                fi
+                if $flat_found; then
+                    IMAGE="$FILES/${flat_fname}"
+                fi
+            else
+                IMAGE=$(echo $flat_url | sed "s/^file:\/\///g")
+                if [[ ! -f $IMAGE || "$(stat -c "%s" $IMAGE)" == "0" ]]; then
+                    echo "Flat disk not found: $flat_url"
+                    flat_found=false
+                fi
+                if ! $flat_found; then
+                    IMAGE=$(echo $image_url | sed "s/^file:\/\///g")
+                fi
+            fi
+            if $flat_found; then
+                IMAGE_NAME="${flat_fname}"
+            fi
+            vmdk_disktype="preallocated"
+        elif [[ -z "$vmdk_create_type" ]]; then
+            # *-flat.vmdk provided: attempt to retrieve the descriptor (*.vmdk)
+            # to retrieve appropriate metadata
+            if [[ ${IMAGE_NAME: -5} != "-flat" ]]; then
+                warn $LINENO "Expected filename suffix: '-flat'."`
+                            `" Filename provided: ${IMAGE_NAME}"
+            else
+                descriptor_fname="${IMAGE_NAME:0:${#IMAGE_NAME} - 5}.vmdk"
+                path_len=`expr ${#image_url} - ${#IMAGE_FNAME}`
+                flat_path="${image_url:0:$path_len}"
+                descriptor_url=$flat_path$descriptor_fname
+                warn $LINENO "$descriptor_data_pair_msg"`
+                                `" Attempt to retrieve the descriptor *.vmdk: $descriptor_url"
+                if [[ $flat_path != file* ]]; then
+                    if [[ ! -f $FILES/$descriptor_fname || \
+                    "$(stat -c "%s" $FILES/$descriptor_fname)" = "0" ]]; then
+                        wget -c $descriptor_url -O $FILES/$descriptor_fname
+                        if [[ $? -ne 0 ]]; then
+                            warn $LINENO "Descriptor not found $descriptor_url"
+                            descriptor_found=false
+                        fi
+                    fi
+                    descriptor_url="$FILES/$descriptor_fname"
+                else
+                    descriptor_url=$(echo $descriptor_url | sed "s/^file:\/\///g")
+                    if [[ ! -f $descriptor_url || \
+                    "$(stat -c "%s" $descriptor_url)" == "0" ]]; then
+                        warn $LINENO "Descriptor not found $descriptor_url"
+                        descriptor_found=false
+                    fi
+                fi
+                if $descriptor_found; then
+                    vmdk_adapter_type="$(head -25 $descriptor_url |"`
+                    `"grep -a -F -m 1 'ddb.adapterType =' $descriptor_url)"
+                    vmdk_adapter_type="${vmdk_adapter_type#*\"}"
+                    vmdk_adapter_type="${vmdk_adapter_type%?}"
+                fi
+            fi
+            #TODO(alegendre): handle streamOptimized once supported by the VMware driver.
+            vmdk_disktype="preallocated"
+        else
+            #TODO(alegendre): handle streamOptimized once supported by the VMware driver.
+            vmdk_disktype="preallocated"
         fi
+
+        # NOTE: For backwards compatibility reasons, colons may be used in place
+        # of semi-colons for property delimiters but they are not permitted
+        # characters in NTFS filesystems.
+        property_string=`echo "$IMAGE_NAME" | grep -oP '(?<=-)(?!.*-).*[:;].*[:;].*$'`
+        IFS=':;' read -a props <<< "$property_string"
+        vmdk_disktype="${props[0]:-$vmdk_disktype}"
+        vmdk_adapter_type="${props[1]:-$vmdk_adapter_type}"
+        vmdk_net_adapter="${props[2]:-$vmdk_net_adapter}"
 
         glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME" --is-public=True --container-format bare --disk-format vmdk --property vmware_disktype="$vmdk_disktype" --property vmware_adaptertype="$vmdk_adapter_type" --property hw_vif_model="$vmdk_net_adapter" < "${IMAGE}"
         return
@@ -1487,7 +1671,6 @@ function upload_image() {
     # XenServer-vhd-ovf-format images are provided as .vhd.tgz
     # and should not be decompressed prior to loading
     if [[ "$image_url" =~ '.vhd.tgz' ]]; then
-        IMAGE="$FILES/${IMAGE_FNAME}"
         IMAGE_NAME="${IMAGE_FNAME%.vhd.tgz}"
         glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME" --is-public=True --container-format=ovf --disk-format=vhd < "${IMAGE}"
         return
@@ -1497,7 +1680,6 @@ function upload_image() {
     # and should not be decompressed prior to loading.
     # Setting metadata, so PV mode is used.
     if [[ "$image_url" =~ '.xen-raw.tgz' ]]; then
-        IMAGE="$FILES/${IMAGE_FNAME}"
         IMAGE_NAME="${IMAGE_FNAME%.xen-raw.tgz}"
         glance \
             --os-auth-token $token \
@@ -1535,7 +1717,6 @@ function upload_image() {
             fi
             ;;
         *.img)
-            IMAGE="$FILES/$IMAGE_FNAME";
             IMAGE_NAME=$(basename "$IMAGE" ".img")
             format=$(qemu-img info ${IMAGE} | awk '/^file format/ { print $3; exit }')
             if [[ ",qcow2,raw,vdi,vmdk,vpc," =~ ",$format," ]]; then
@@ -1546,20 +1727,17 @@ function upload_image() {
             CONTAINER_FORMAT=bare
             ;;
         *.img.gz)
-            IMAGE="$FILES/${IMAGE_FNAME}"
             IMAGE_NAME=$(basename "$IMAGE" ".img.gz")
             DISK_FORMAT=raw
             CONTAINER_FORMAT=bare
             UNPACK=zcat
             ;;
         *.qcow2)
-            IMAGE="$FILES/${IMAGE_FNAME}"
             IMAGE_NAME=$(basename "$IMAGE" ".qcow2")
             DISK_FORMAT=qcow2
             CONTAINER_FORMAT=bare
             ;;
         *.iso)
-            IMAGE="$FILES/${IMAGE_FNAME}"
             IMAGE_NAME=$(basename "$IMAGE" ".iso")
             DISK_FORMAT=iso
             CONTAINER_FORMAT=bare
@@ -1567,11 +1745,15 @@ function upload_image() {
         *) echo "Do not know what to do with $IMAGE_FNAME"; false;;
     esac
 
+    if is_arch "ppc64"; then
+        IMG_PROPERTY="--property hw_disk_bus=scsi --property hw_cdrom_bus=scsi"
+    fi
+
     if [ "$CONTAINER_FORMAT" = "bare" ]; then
         if [ "$UNPACK" = "zcat" ]; then
-            glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME" --is-public True --container-format=$CONTAINER_FORMAT --disk-format $DISK_FORMAT < <(zcat --force "${IMAGE}")
+            glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME" $IMG_PROPERTY --is-public True --container-format=$CONTAINER_FORMAT --disk-format $DISK_FORMAT < <(zcat --force "${IMAGE}")
         else
-            glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME" --is-public True --container-format=$CONTAINER_FORMAT --disk-format $DISK_FORMAT < "${IMAGE}"
+            glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME" $IMG_PROPERTY --is-public True --container-format=$CONTAINER_FORMAT --disk-format $DISK_FORMAT < "${IMAGE}"
         fi
     else
         # Use glance client to add the kernel the root filesystem.
@@ -1579,12 +1761,12 @@ function upload_image() {
         # kernel for use when uploading the root filesystem.
         KERNEL_ID=""; RAMDISK_ID="";
         if [ -n "$KERNEL" ]; then
-            KERNEL_ID=$(glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME-kernel" --is-public True --container-format aki --disk-format aki < "$KERNEL" | grep ' id ' | get_field 2)
+            KERNEL_ID=$(glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME-kernel" $IMG_PROPERTY --is-public True --container-format aki --disk-format aki < "$KERNEL" | grep ' id ' | get_field 2)
         fi
         if [ -n "$RAMDISK" ]; then
-            RAMDISK_ID=$(glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME-ramdisk" --is-public True --container-format ari --disk-format ari < "$RAMDISK" | grep ' id ' | get_field 2)
+            RAMDISK_ID=$(glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "$IMAGE_NAME-ramdisk" $IMG_PROPERTY --is-public True --container-format ari --disk-format ari < "$RAMDISK" | grep ' id ' | get_field 2)
         fi
-        glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "${IMAGE_NAME%.img}" --is-public True --container-format ami --disk-format ami ${KERNEL_ID:+--property kernel_id=$KERNEL_ID} ${RAMDISK_ID:+--property ramdisk_id=$RAMDISK_ID} < "${IMAGE}"
+        glance --os-auth-token $token --os-image-url http://$GLANCE_HOSTPORT image-create --name "${IMAGE_NAME%.img}" $IMG_PROPERTY --is-public True --container-format ami --disk-format ami ${KERNEL_ID:+--property kernel_id=$KERNEL_ID} ${RAMDISK_ID:+--property ramdisk_id=$RAMDISK_ID} < "${IMAGE}"
     fi
 }
 

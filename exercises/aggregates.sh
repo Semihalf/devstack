@@ -43,6 +43,10 @@ source $TOP_DIR/exerciserc
 # Test as the admin user
 . $TOP_DIR/openrc admin admin
 
+# If nova api is not enabled we exit with exitcode 55 so that
+# the exercise is skipped
+is_service_enabled n-api || exit 55
+
 # Cells does not support aggregates.
 is_service_enabled n-cell && exit 55
 
@@ -67,7 +71,10 @@ exit_if_aggregate_present() {
 exit_if_aggregate_present $AGGREGATE_NAME
 
 AGGREGATE_ID=$(nova aggregate-create $AGGREGATE_NAME $AGGREGATE_A_ZONE | grep " $AGGREGATE_NAME " | get_field 1)
+die_if_not_set $LINENO AGGREGATE_ID "Failure creating AGGREGATE_ID for $AGGREGATE_NAME $AGGREGATE_A_ZONE"
+
 AGGREGATE2_ID=$(nova aggregate-create $AGGREGATE2_NAME $AGGREGATE_A_ZONE | grep " $AGGREGATE2_NAME " | get_field 1)
+die_if_not_set $LINENO AGGREGATE2_ID "Fail creating AGGREGATE2_ID for $AGGREGATE2_NAME $AGGREGATE_A_ZONE"
 
 # check aggregate created
 nova aggregate-list | grep -q " $AGGREGATE_NAME " || die $LINENO "Aggregate $AGGREGATE_NAME not created"
