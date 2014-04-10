@@ -253,7 +253,11 @@ check_path_perm_sanity ${DEST}
 # correctly.  Make sure it exists in /etc/hosts so that is always true.
 LOCAL_HOSTNAME=`hostname -s`
 if [ -z "`grep ^127.0.0.1 /etc/hosts | grep $LOCAL_HOSTNAME`" ]; then
-    sudo sed -i "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
+    if is_freebsd; then
+	sudo sed -i "" "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
+    else
+	sudo sed -i "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
+    fi	    
 fi
 
 # Set ``OFFLINE`` to ``True`` to configure ``stack.sh`` to run cleanly without
