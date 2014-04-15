@@ -650,6 +650,10 @@ if ! is_freebsd; then
     if [[ "$OFFLINE" != "True" ]]; then
         $TOP_DIR/tools/install_pip.sh
     fi
+else
+    # By default, cc does not look into this dir.
+    # This is needed by python packages.
+    export CPATH=/usr/local/include
 fi
 
 # Do the ugly hacks for borken packages and distros
