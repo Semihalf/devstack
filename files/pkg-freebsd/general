@@ -1,6 +1,7 @@
 curl
 dbus
 git
+libffi
 libxml2
 libxslt
 psmisc
