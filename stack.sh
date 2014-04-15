@@ -896,6 +896,8 @@ if [[ "$USE_SCREEN" == "True" ]]; then
     	screen -d -m -S $SCREEN_NAME -t shell -s /usr/local/bin/bash
     else
     	screen -d -m -S $SCREEN_NAME -t shell -s /bin/bash
+    fi
+
     sleep 1
 
     # Set a reasonable status bar
