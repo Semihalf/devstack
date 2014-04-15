@@ -84,6 +84,9 @@ if [[ ${DISTRO} =~ (precise) ]]; then
             exit 1
         fi
     fi
+
+    # Install oslo.sphinx
+    pip_install oslo.sphinx
 fi
 
 
