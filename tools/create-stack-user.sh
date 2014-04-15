@@ -69,3 +69,6 @@ grep -q "^#includedir.*$INSTALL_PREFIX/etc/sudoers.d" $SUDOERS_ETC_FILE ||
 # Some binaries might be under /sbin or /usr/sbin, so make sure sudo will
 # see them by forcing PATH
 echo "Defaults:$STACK_USER secure_path=/sbin:/usr/sbin:/usr/bin:/bin:/usr/local/sbin:/usr/local/bin" >> $SUDOERS_STACK_FILE
+if is_freebsd; then
+    echo "Defaults:$STACK_USER env_keep=CPATH" >> $SUDOERS_STACK_FILE
+fi
