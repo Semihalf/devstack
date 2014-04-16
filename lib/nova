@@ -465,6 +465,10 @@ function create_nova_conf() {
     if [ "$FORCE_CONFIG_DRIVE" != "False" ]; then
         iniset $NOVA_CONF DEFAULT force_config_drive "$FORCE_CONFIG_DRIVE"
     fi
+    if [ "$USE_COW_IMAGES" == "False" ]; then
+        iniset $NOVA_CONF DEFAULT use_cow_images "$USE_COW_IMAGES"
+    fi
+
     # Format logging
     if [ "$LOG_COLOR" == "True" ] && [ "$SYSLOG" == "False" ]; then
         setup_colorized_logging $NOVA_CONF DEFAULT
