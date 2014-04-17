@@ -269,6 +269,10 @@ function configure_nova {
         fi
 
         if [[ "$VIRT_DRIVER" = 'libvirt' ]]; then
+            if is_freebsd; then
+                sudo kldload -n if_tap if_bridge
+            fi
+
             # Check for kvm (hardware based virtualization).  If unable to initialize
             # kvm, we drop back to the slower emulation mode (qemu).  Note: many systems
             # come with hardware virtualization disabled in BIOS.
@@ -281,6 +285,14 @@ function configure_nova {
                         # https://bugzilla.redhat.com/show_bug.cgi?id=753589
                         sudo setsebool virt_use_execmem on
                     fi
+                fi
+            fi
+
+            if [[ "$LIBVIRT_TYPE" == "bhyve" ]]; then
+                sudo kldload -n vmm
+                if [ $? -ne 0 ]; then
+                    echo "WARNING: Switching to QEMU"
+                    LIBVIRT_TYPE=qemu
                 fi
             fi
 
