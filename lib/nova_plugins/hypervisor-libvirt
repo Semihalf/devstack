@@ -93,15 +93,16 @@ EOF"
         fi
     fi
 
-    # TODO(md): This is a workaround only, libvirt group should be also used on FreeBSD.
-    if ! is_freebsd; then
-        # The user that nova runs as needs to be member of **libvirtd** group otherwise
-        # nova-compute will be unable to use libvirt.
-        if ! getent group $LIBVIRT_GROUP >/dev/null; then
+    # The user that nova runs as needs to be member of **libvirtd** group otherwise
+    # nova-compute will be unable to use libvirt.
+    if ! getent group $LIBVIRT_GROUP >/dev/null; then
+        if is_freebsd; then
+            sudo pw groupadd $LIBVIRT_GROUP
+        else
             sudo groupadd $LIBVIRT_GROUP
         fi
-        add_user_to_group $STACK_USER $LIBVIRT_GROUP
     fi
+    add_user_to_group $STACK_USER $LIBVIRT_GROUP
 
     # libvirt detects various settings on startup, as we potentially changed
     # the system configuration (modules, filesystems), we need to restart
