@@ -256,40 +256,45 @@ function configure_nova() {
         fi
 
         if [[ "$VIRT_DRIVER" = 'libvirt' ]]; then
-            # Attempt to load modules: network block device - used to manage qcow images
-            sudo modprobe nbd || true
+            if ! is_freebsd; then
+                # Attempt to load modules: network block device - used to manage qcow images
+                sudo modprobe nbd || true
 
-            # Check for kvm (hardware based virtualization).  If unable to initialize
-            # kvm, we drop back to the slower emulation mode (qemu).  Note: many systems
-            # come with hardware virtualization disabled in BIOS.
-            if [[ "$LIBVIRT_TYPE" == "kvm" ]]; then
-                sudo modprobe kvm || true
-                if [ ! -e /dev/kvm ]; then
-                    echo "WARNING: Switching to QEMU"
-                    LIBVIRT_TYPE=qemu
-                    if which selinuxenabled 2>&1 > /dev/null && selinuxenabled; then
-                        # https://bugzilla.redhat.com/show_bug.cgi?id=753589
-                        sudo setsebool virt_use_execmem on
-                    fi
-                fi
-            fi
-
-            # Install and configure **LXC** if specified.  LXC is another approach to
-            # splitting a system into many smaller parts.  LXC uses cgroups and chroot
-            # to simulate multiple systems.
-            if [[ "$LIBVIRT_TYPE" == "lxc" ]]; then
-                if is_ubuntu; then
-                    if [[ ! "$DISTRO" > natty ]]; then
-                        cgline="none /cgroup cgroup cpuacct,memory,devices,cpu,freezer,blkio 0 0"
-                        sudo mkdir -p /cgroup
-                        if ! grep -q cgroup /etc/fstab; then
-                            echo "$cgline" | sudo tee -a /etc/fstab
-                        fi
-                        if ! mount -n | grep -q cgroup; then
-                            sudo mount /cgroup
+                # Check for kvm (hardware based virtualization).  If unable to initialize
+                # kvm, we drop back to the slower emulation mode (qemu).  Note: many systems
+                # come with hardware virtualization disabled in BIOS.
+                if [[ "$LIBVIRT_TYPE" == "kvm" ]]; then
+                    sudo modprobe kvm || true
+                    if [ ! -e /dev/kvm ]; then
+                        echo "WARNING: Switching to QEMU"
+                        LIBVIRT_TYPE=qemu
+                        if which selinuxenabled 2>&1 > /dev/null && selinuxenabled; then
+                            # https://bugzilla.redhat.com/show_bug.cgi?id=753589
+                            sudo setsebool virt_use_execmem on
                         fi
                     fi
                 fi
+
+                # Install and configure **LXC** if specified.  LXC is another approach to
+                # splitting a system into many smaller parts.  LXC uses cgroups and chroot
+                # to simulate multiple systems.
+                if [[ "$LIBVIRT_TYPE" == "lxc" ]]; then
+                    if is_ubuntu; then
+                        if [[ ! "$DISTRO" > natty ]]; then
+                            cgline="none /cgroup cgroup cpuacct,memory,devices,cpu,freezer,blkio 0 0"
+                            sudo mkdir -p /cgroup
+                            if ! grep -q cgroup /etc/fstab; then
+                                echo "$cgline" | sudo tee -a /etc/fstab
+                            fi
+                            if ! mount -n | grep -q cgroup; then
+                                sudo mount /cgroup
+                            fi
+                        fi
+                    fi
+                fi
+            else
+                # Load modules required by libvirt
+                sudo kldload -n vmm if_bridge if_tap || die "Can not load required modules."
             fi
         fi
 
