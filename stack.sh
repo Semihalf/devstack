@@ -260,7 +260,11 @@ check_path_perm_sanity ${DEST}
 # correctly.  Make sure it exists in /etc/hosts so that is always true.
 LOCAL_HOSTNAME=`hostname -s`
 if [ -z "`grep ^127.0.0.1 /etc/hosts | grep $LOCAL_HOSTNAME`" ]; then
-    sudo sed -i "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
+    if is_freebsd; then
+        sudo sed -i '' "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
+    else
+        sudo sed -i "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
+    fi
 fi
 
 # Destination path for service data
@@ -822,14 +826,30 @@ EOF
     if [ -f $RSYSLOGCONF ]; then
         sudo cp -b $RSYSLOGCONF $RSYSLOGCONF.bak
         if [[ $(grep '$SystemLogRateLimitBurst' $RSYSLOGCONF)  ]]; then
-            sudo sed -i 's/$SystemLogRateLimitBurst\ .*/$SystemLogRateLimitBurst\ 0/' $RSYSLOGCONF
+            if is_freebsd; then
+                sudo sed -i '' 's/$SystemLogRateLimitBurst\ .*/$SystemLogRateLimitBurst\ 0/' $RSYSLOGCONF
+            else
+                sudo sed -i 's/$SystemLogRateLimitBurst\ .*/$SystemLogRateLimitBurst\ 0/' $RSYSLOGCONF
+            fi
         else
-            sudo sed -i '$ i $SystemLogRateLimitBurst\ 0' $RSYSLOGCONF
+            if is_freebsd; then
+                sudo sed -i '' '$ i $SystemLogRateLimitBurst\ 0' $RSYSLOGCONF
+            else
+                sudo sed -i '$ i $SystemLogRateLimitBurst\ 0' $RSYSLOGCONF
+            fi
         fi
         if [[ $(grep '$SystemLogRateLimitInterval' $RSYSLOGCONF)  ]]; then
-            sudo sed -i 's/$SystemLogRateLimitInterval\ .*/$SystemLogRateLimitInterval\ 0/' $RSYSLOGCONF
+            if is_freebsd; then
+                sudo sed -i '' 's/$SystemLogRateLimitInterval\ .*/$SystemLogRateLimitInterval\ 0/' $RSYSLOGCONF
+            else
+                sudo sed -i 's/$SystemLogRateLimitInterval\ .*/$SystemLogRateLimitInterval\ 0/' $RSYSLOGCONF
+            fi
         else
-            sudo sed -i '$ i $SystemLogRateLimitInterval\ 0' $RSYSLOGCONF
+            if is_freebsd; then
+                sudo sed -i '' '$ i $SystemLogRateLimitInterval\ 0' $RSYSLOGCONF
+            else
+                sudo sed -i '$ i $SystemLogRateLimitInterval\ 0' $RSYSLOGCONF
+            fi
         fi
     fi
 
