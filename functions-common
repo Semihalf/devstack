@@ -62,7 +62,7 @@ function inicomment {
     local file=$1
     local section=$2
     local option=$3
-    local sed_re="/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|"
+    local sed_re='/^\[$section\]/,/^\[.*\]/ s|^\($option[ \t]*=.*$\)|#\1|'
     
     if is_freebsd; then
         sed -i '' -e $sed_re "$file"
@@ -144,11 +144,10 @@ $option = $value
     else
         local sep=$(echo -ne "\x01")
         # Replace it
-        local sed_re='/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep}
         if is_freebsd; then
-            sed -i '' -e $sed_re "$file"
+            sed -i '' -e '/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep} "$file"
         else
-            sed -i -e $sed_re "$file"
+            sed -i -e '/^\['${section}'\]/,/^\[.*\]/ s'${sep}'^\('${option}'[ \t]*=[ \t]*\).*$'${sep}'\1'"${value}"${sep} "$file"
         fi
     fi
     $xtrace
