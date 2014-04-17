@@ -1709,6 +1709,8 @@ function maskip {
 function restart_service {
     if is_ubuntu; then
         sudo /usr/sbin/service $1 restart
+    elif is_freebsd; then
+        sudo /usr/sbin/service $1 onerestart
     else
         sudo /sbin/service $1 restart
     fi
