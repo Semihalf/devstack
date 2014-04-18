@@ -76,6 +76,11 @@ if is_freebsd; then
     if [ ! -f /usr/local/bin/timeout ]; then
         sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
     fi
+
+    # true is in different location
+    if [ ! -f /bin/true ]; then
+        sudo ln -s /usr/bin/true /bin/true
+    fi
 fi
 
 # Ubuntu 12.04
