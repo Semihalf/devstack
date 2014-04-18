@@ -69,6 +69,15 @@ if [[ -d $dir ]]; then
     sudo chmod +r $dir/*
 fi
 
+# FreeBSD
+# -------
+if is_freebsd; then
+    # Fixup timeout on FreeBSD, since it is called gtimeout instead
+    if [ ! -f /usr/local/bin/timeout ]; then
+        sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
+    fi
+fi
+
 # Ubuntu 12.04
 # ------------
 
