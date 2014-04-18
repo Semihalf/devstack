@@ -250,7 +250,7 @@ fi
 # and read/executable by everybody for daemons (e.g. apache run for horizon)
 sudo mkdir -p $DEST
 # XXX This fails if TRACK_DEPENDS=True
-safe_chown -R $STACK_USER $DEST
+safe_chown -R $STACK_USER:$STACK_GROUP $DEST
 safe_chmod 0755 $DEST
 
 # a basic test for $DEST path permissions (fatal on error unless skipped)

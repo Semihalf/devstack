@@ -15,8 +15,10 @@ SERVICE_DIR=${DEST}/status
 # Determine stack user
 if [[ $EUID -eq 0 ]]; then
     STACK_USER=stack
+    STACK_GROUP=stack
 else
     STACK_USER=${STACK_USER:-$(whoami)}
+    STACK_GROUP=${STACK_GROUP:-$(groups)}
 fi
 
 # Set local system prefix i.e. /usr/local or empty

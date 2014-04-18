@@ -1,5 +1,6 @@
 # Stack user name
 STACK_USER=stack
+STACK_GROUP=stack
 
 # Passwords
 ADMIN_PASSWORD=c0ntrail123
@@ -12,7 +13,7 @@ STACK_USER_PASSWORD=1qaz
 OS_USERNAME=admin
 OS_TENANT_NAME=admin
 
-DEST=/home/stack
+DEST=/opt/stack
 
 # Logging
 LOGFILE=$DEST/logs/stack.sh.log
