@@ -63,7 +63,7 @@ SUDOERS_STACK_FILE="$INSTALL_PREFIX/etc/sudoers.d/50_stack_sh"
 # UEC images ``/etc/sudoers`` does not have a ``#includedir``, add one
 grep -q "^#includedir.*$INSTALL_PREFIX/etc/sudoers.d" $SUDOERS_ETC_FILE ||
     echo "#includedir $INSTALL_PREFIX/etc/sudoers.d" >> $SUDOERS_ETC_FILE
-( umask 226 && echo "$STACK_USER ALL=(ALL) NOPASSWD:ALL" \
+( umask 226 && echo "$STACK_USER ALL=(ALL:ALL) NOPASSWD:ALL" \
     > $SUDOERS_STACK_FILE )
 
 # Some binaries might be under /sbin or /usr/sbin, so make sure sudo will

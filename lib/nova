@@ -256,40 +256,45 @@ function configure_nova() {
         fi
 
         if [[ "$VIRT_DRIVER" = 'libvirt' ]]; then
-            # Attempt to load modules: network block device - used to manage qcow images
-            sudo modprobe nbd || true
+            if ! is_freebsd; then
+                # Attempt to load modules: network block device - used to manage qcow images
+                sudo modprobe nbd || true
 
-            # Check for kvm (hardware based virtualization).  If unable to initialize
-            # kvm, we drop back to the slower emulation mode (qemu).  Note: many systems
-            # come with hardware virtualization disabled in BIOS.
-            if [[ "$LIBVIRT_TYPE" == "kvm" ]]; then
-                sudo modprobe kvm || true
-                if [ ! -e /dev/kvm ]; then
-                    echo "WARNING: Switching to QEMU"
-                    LIBVIRT_TYPE=qemu
-                    if which selinuxenabled 2>&1 > /dev/null && selinuxenabled; then
-                        # https://bugzilla.redhat.com/show_bug.cgi?id=753589
-                        sudo setsebool virt_use_execmem on
-                    fi
-                fi
-            fi
-
-            # Install and configure **LXC** if specified.  LXC is another approach to
-            # splitting a system into many smaller parts.  LXC uses cgroups and chroot
-            # to simulate multiple systems.
-            if [[ "$LIBVIRT_TYPE" == "lxc" ]]; then
-                if is_ubuntu; then
-                    if [[ ! "$DISTRO" > natty ]]; then
-                        cgline="none /cgroup cgroup cpuacct,memory,devices,cpu,freezer,blkio 0 0"
-                        sudo mkdir -p /cgroup
-                        if ! grep -q cgroup /etc/fstab; then
-                            echo "$cgline" | sudo tee -a /etc/fstab
-                        fi
-                        if ! mount -n | grep -q cgroup; then
-                            sudo mount /cgroup
+                # Check for kvm (hardware based virtualization).  If unable to initialize
+                # kvm, we drop back to the slower emulation mode (qemu).  Note: many systems
+                # come with hardware virtualization disabled in BIOS.
+                if [[ "$LIBVIRT_TYPE" == "kvm" ]]; then
+                    sudo modprobe kvm || true
+                    if [ ! -e /dev/kvm ]; then
+                        echo "WARNING: Switching to QEMU"
+                        LIBVIRT_TYPE=qemu
+                        if which selinuxenabled 2>&1 > /dev/null && selinuxenabled; then
+                            # https://bugzilla.redhat.com/show_bug.cgi?id=753589
+                            sudo setsebool virt_use_execmem on
                         fi
                     fi
                 fi
+
+                # Install and configure **LXC** if specified.  LXC is another approach to
+                # splitting a system into many smaller parts.  LXC uses cgroups and chroot
+                # to simulate multiple systems.
+                if [[ "$LIBVIRT_TYPE" == "lxc" ]]; then
+                    if is_ubuntu; then
+                        if [[ ! "$DISTRO" > natty ]]; then
+                            cgline="none /cgroup cgroup cpuacct,memory,devices,cpu,freezer,blkio 0 0"
+                            sudo mkdir -p /cgroup
+                            if ! grep -q cgroup /etc/fstab; then
+                                echo "$cgline" | sudo tee -a /etc/fstab
+                            fi
+                            if ! mount -n | grep -q cgroup; then
+                                sudo mount /cgroup
+                            fi
+                        fi
+                    fi
+                fi
+            else
+                # Load modules required by libvirt
+                sudo kldload -n vmm if_bridge if_tap || die "Can not load required modules."
             fi
         fi
 
@@ -465,6 +470,10 @@ function create_nova_conf() {
     if [ "$FORCE_CONFIG_DRIVE" != "False" ]; then
         iniset $NOVA_CONF DEFAULT force_config_drive "$FORCE_CONFIG_DRIVE"
     fi
+    if [ "$USE_COW_IMAGES" == "False" ]; then
+        iniset $NOVA_CONF DEFAULT use_cow_images "$USE_COW_IMAGES"
+    fi
+
     # Format logging
     if [ "$LOG_COLOR" == "True" ] && [ "$SYSLOG" == "False" ]; then
         setup_colorized_logging $NOVA_CONF DEFAULT
@@ -695,17 +704,31 @@ function start_nova_compute() {
         # Enable client side traces for libvirt
         local log_filters="1:libvirt 1:qemu 1:conf 1:security 3:event 3:json 3:file 1:util"
         local log_outputs="1:file:/var/log/libvirt/libvirtd.log"
-        # Enable server side traces for libvirtd
-        if ! grep -q "log_filters=\"$log_filters\"" /etc/libvirt/libvirtd.conf; then
-            echo "log_filters=\"$log_filters\"" | sudo tee -a /etc/libvirt/libvirtd.conf
+
+        if is_freebsd; then
+            local libvirt_conf_file="/usr/local/etc/libvirt/libvirtd.conf"
+        else
+            local libvirt_conf_file="/etc/libvirt/libvirtd.conf"
         fi
-        if ! grep -q "log_outputs=\"$log_outputs\"" /etc/libvirt/libvirtd.conf; then
-            echo "log_outputs=\"$log_outputs\"" | sudo tee -a /etc/libvirt/libvirtd.conf
+
+        # Enable server side traces for libvirtd
+        if ! grep -q "log_filters=\"$log_filters\"" $libvirt_conf_file; then
+            echo "log_filters=\"$log_filters\"" | sudo tee -a $libvirt_conf_file
+        fi
+        if ! grep -q "log_outputs=\"$log_outputs\"" $libvirt_conf_file; then
+            echo "log_outputs=\"$log_outputs\"" | sudo tee -a $libvirt_conf_file
         fi
 
         # The group **$LIBVIRT_GROUP** is added to the current user in this script.
         # Use 'sg' to execute nova-compute as a member of the **$LIBVIRT_GROUP** group.
-        screen_it n-cpu "cd $NOVA_DIR && sg $LIBVIRT_GROUP '$NOVA_BIN_DIR/nova-compute --config-file $compute_cell_conf'"
+        if is_freebsd; then
+            # NOTE(md): There is no 'sg' utility on FreeBSD, thus sudo is used.
+            # 'sg' has been left for Linux platforms as using sudo requires
+            # additional config option in sudoers.
+            screen_it n-cpu "cd $NOVA_DIR && sudo -u $USER -g $LIBVIRT_GROUP $NOVA_BIN_DIR/nova-compute --config-file $compute_cell_conf"
+        else
+            screen_it n-cpu "cd $NOVA_DIR && sg $LIBVIRT_GROUP '$NOVA_BIN_DIR/nova-compute --config-file $compute_cell_conf'"
+        fi
     elif [[ "$VIRT_DRIVER" = 'fake' ]]; then
         for i in `seq 1 $NUMBER_FAKE_NOVA_COMPUTE`; do
             screen_it n-cpu "cd $NOVA_DIR && $NOVA_BIN_DIR/nova-compute --config-file $compute_cell_conf --config-file <(echo -e '[DEFAULT]\nhost=${HOSTNAME}${i}')"

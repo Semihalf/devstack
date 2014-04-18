@@ -96,7 +96,11 @@ EOF"
     # The user that nova runs as needs to be member of **libvirtd** group otherwise
     # nova-compute will be unable to use libvirt.
     if ! getent group $LIBVIRT_GROUP >/dev/null; then
-        sudo groupadd $LIBVIRT_GROUP
+        if is_freebsd; then
+            sudo pw groupadd $LIBVIRT_GROUP
+        else
+            sudo groupadd $LIBVIRT_GROUP
+        fi
     fi
     add_user_to_group $STACK_USER $LIBVIRT_GROUP
 
