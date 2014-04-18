@@ -1042,8 +1042,6 @@ if is_service_enabled n-net q-dhcp; then
         clean_iptables
     fi
 
-    clean_iptables
-
     if is_service_enabled n-net; then
         rm -rf ${NOVA_STATE_PATH}/networks
         sudo mkdir -p ${NOVA_STATE_PATH}/networks
