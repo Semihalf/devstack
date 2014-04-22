@@ -37,7 +37,6 @@ if [[ $? = 0 ]]; then
     echo "die_if_not_set [X='' false] Failed"
 fi
 
-
 # Enabling/disabling services
 
 echo "Testing enable_service()"
