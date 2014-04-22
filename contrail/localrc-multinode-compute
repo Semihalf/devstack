@@ -1,5 +1,10 @@
 #HOST_IP=192.168.56.104 # publicly routable ip to me
 
+#Variables needed by tools/create-stack-user.sh
+STACK_USER_PASSWORD=1qaz
+STACK_USER=stack
+DEST=/home/stack
+
 # change this to your master node's ip
 SERVICE_HOST=192.168.56.119 # control1
 

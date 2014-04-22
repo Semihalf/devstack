@@ -25,7 +25,7 @@ function install_contrail() {
     # dependencies
     if is_ubuntu; then
 	apt_get install patch scons flex bison make vim
-    apt_get install chkconfig
+	apt_get install chkconfig
 	apt_get install libexpat-dev libgettextpo0 libcurl4-openssl-dev
 	apt_get install python-dev autoconf automake build-essential libtool
 	apt_get install libevent-dev libxml2-dev libxslt-dev
@@ -36,7 +36,7 @@ function install_contrail() {
 	apt_get update
 
 	apt_get install redis-server
-    else
+    elif is_fedora; then
 	sudo yum -y install patch scons flex bison make vim
 	sudo yum -y install expat-devel gettext-devel curl-devel
 	sudo yum -y install gcc-c++ python-devel autoconf automake libtool
@@ -44,6 +44,13 @@ function install_contrail() {
 	sudo yum -y install tunctl
 	sudo yum -y install redis
 	sudo yum -y install java-1.7.0-openjdk
+    elif is_freebsd; then
+	sudo pkg install -y scons flex bison
+	sudo pkg install -y expat gettext curl
+	sudo pkg install -y gcc python autoconf automake libtool
+	sudo pkg install -y libevent libxml2 libxslt
+	sudo pkg install -y tunctl
+	sudo pkg install -y redis
     fi
 
     # api server requirements
@@ -88,47 +95,47 @@ function install_contrail() {
     # test_install_neutron_patch
 
     # get cassandra
-    if ! which cassandra > /dev/null 2>&1 ; then
-	if is_ubuntu; then
-	    apt_get install python-software-properties
-	    sudo add-apt-repository -y ppa:nilarimogard/webupd8
-	    apt_get update
-	    apt_get install launchpad-getkeys
-
-	    # use oracle Java 7 instead of OpenJDK
-	    sudo add-apt-repository -y ppa:webupd8team/java
-	    apt_get update
-	    echo debconf shared/accepted-oracle-license-v1-1 select true | \
-		sudo debconf-set-selections
-	    echo debconf shared/accepted-oracle-license-v1-1 seen true | \
-		sudo debconf-set-selections
-	    yes | apt_get install oracle-java7-installer
-
-	    # See http://wiki.apache.org/cassandra/DebianPackaging
-	    echo "deb http://www.apache.org/dist/cassandra/debian 12x main" | \
-		sudo tee /etc/apt/sources.list.d/cassandra.list
-	    gpg --keyserver pgp.mit.edu --recv-keys F758CE318D77295D
-	    gpg --export --armor F758CE318D77295D | sudo apt-key add -
-	    gpg --keyserver pgp.mit.edu --recv-keys 2B5C1B00
-	    gpg --export --armor 2B5C1B00 | sudo apt-key add -
-
-	    apt_get update
-	    apt_get install --force-yes cassandra
-	    
-	    # fix cassandra's stack size issues
-	    test_install_cassandra_patch
-
-	    # don't start cassandra at boot.  I'll screen_it later
-	    sudo service cassandra stop
-	    sudo update-rc.d -f cassandra remove
-	elif [ ! -d $CONTRAIL_SRC/third_party/apache-cassandra-2.0.2-bin ]; then
-        contrail_cwd=$(pwd)
-        cd $CONTRAIL_SRC/third_party
-        wget -N http://repo1.maven.org/maven2/org/apache/cassandra/apache-cassandra/2.0.2/apache-cassandra-2.0.2-bin.tar.gz
-        tar xvzf apache-cassandra-2.0.2-bin.tar.gz
-        cd ${contrail_cwd}
-    fi
-    fi
+#    if ! which cassandra > /dev/null 2>&1 ; then
+#	if is_ubuntu; then
+#	    apt_get install python-software-properties
+#	    sudo add-apt-repository -y ppa:nilarimogard/webupd8
+#	    apt_get update
+#	    apt_get install launchpad-getkeys
+#
+#	    # use oracle Java 7 instead of OpenJDK
+#	    sudo add-apt-repository -y ppa:webupd8team/java
+#	    apt_get update
+#	    echo debconf shared/accepted-oracle-license-v1-1 select true | \
+#		sudo debconf-set-selections
+#	    echo debconf shared/accepted-oracle-license-v1-1 seen true | \
+#		sudo debconf-set-selections
+#	    yes | apt_get install oracle-java7-installer
+#
+#	    # See http://wiki.apache.org/cassandra/DebianPackaging
+#	    echo "deb http://www.apache.org/dist/cassandra/debian 12x main" | \
+#		sudo tee /etc/apt/sources.list.d/cassandra.list
+#	    gpg --keyserver pgp.mit.edu --recv-keys F758CE318D77295D
+#	    gpg --export --armor F758CE318D77295D | sudo apt-key add -
+#	    gpg --keyserver pgp.mit.edu --recv-keys 2B5C1B00
+#	    gpg --export --armor 2B5C1B00 | sudo apt-key add -
+#
+#	    apt_get update
+#	    apt_get install --force-yes cassandra
+#	    
+#	    # fix cassandra's stack size issues
+#	    test_install_cassandra_patch
+#
+#	    # don't start cassandra at boot.  I'll screen_it later
+#	    sudo service cassandra stop
+#	    sudo update-rc.d -f cassandra remove
+#	elif [ ! -d $CONTRAIL_SRC/third_party/apache-cassandra-2.0.2-bin ]; then
+#        contrail_cwd=$(pwd)
+#        cd $CONTRAIL_SRC/third_party
+#        wget -N http://repo1.maven.org/maven2/org/apache/cassandra/apache-cassandra/2.0.2/apache-cassandra-2.0.2-bin.tar.gz
+#        tar xvzf apache-cassandra-2.0.2-bin.tar.gz
+#        cd ${contrail_cwd}
+#    fi
+#    fi
 	    
     # get ifmap 
     if [ ! -d $CONTRAIL_SRC/third_party/irond-0.3.0-bin ]; then
@@ -154,7 +161,7 @@ function install_contrail() {
     if ! python -c 'import ncclient' >/dev/null 2>&1; then
         contrail_cwd=$(pwd)
         cd $CONTRAIL_SRC/third_party
-        wget -N https://code.grnet.gr/attachments/download/1172/ncclient-v0.3.2.tar.gz
+        wget -N --no-check-certificate https://code.grnet.gr/attachments/download/1172/ncclient-v0.3.2.tar.gz
         sudo pip install ncclient-v0.3.2.tar.gz
         cd ${contrail_cwd}
     fi
