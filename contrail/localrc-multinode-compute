@@ -6,10 +6,10 @@ STACK_USER=stack
 DEST=/home/stack
 
 # change this to your master node's ip
-SERVICE_HOST=192.168.56.119 # control1
+SERVICE_HOST=10.100.0.1 # control1
 
 # the interface that contrail's vhost0 should take over
-PHYSICAL_INTERFACE=eth0
+PHYSICAL_INTERFACE=igb0
 
 ENABLE_CONTRAIL=yes
 Q_PLUGIN=contrail
@@ -43,6 +43,16 @@ DATABASE_TYPE=mysql
 # use contrail forked neutron repo
 NEUTRON_REPO=https://github.com/dsetia/neutron.git
 NEUTRON_BRANCH=master
+
+NOVA_REPO=https://github.com/Semihalf/openstack-nova.git
+NOVA_BRANCH=freebsd
+
+# Working libvirt config for bhyve
+VIRT_DRIVER=libvirt
+LIBVIRT_TYPE=bhyve
+FORCE_CONFIG_DRIVE=False
+LIBVIRT_FIREWALL_DRIVER=nova.virt.firewall.NoopFirewallDriver
+USE_COW_IMAGES=False
 
 # repo proto is https or (default) ssh. Leave commented for ssh
 # CONTRAIL_REPO_PROTO=https
