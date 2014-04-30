@@ -6,7 +6,7 @@ STACK_USER=stack
 DEST=/home/stack
 
 # change this to your master node's ip
-SERVICE_HOST=10.100.0.1 # control1
+SERVICE_HOST=10.100.0.26 # control1
 
 # the interface that contrail's vhost0 should take over
 PHYSICAL_INTERFACE=igb0
