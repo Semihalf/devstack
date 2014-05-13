@@ -118,7 +118,14 @@ function install_contrail() {
     fi
 
     (cd third_party/thrift-*; touch configure.ac README ChangeLog; autoreconf --force --install)
+
+    # workaround: fix icu
+    rm -rf build/third_party/icu
+    scons -c build/third_party/icu
+    scons build/third_party/icu
+
     scons
+
     cd ${contrail_cwd}
 
     # install contrail modules
