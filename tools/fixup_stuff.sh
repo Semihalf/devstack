@@ -77,6 +77,23 @@ if is_freebsd; then
         sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
     fi
 
+    # Fixup gcc locations
+    LINK=/bin/gcc
+    TARGET=/usr/local/bin/gcc47
+    if [ ! -e $LINK ]; then
+        if [ ! -h $LINK ]; then
+            sudo ln -s $TARGET $LINK
+        fi
+    fi
+
+    LINK=/bin/g++
+    TARGET=/usr/local/bin/g++47
+    if [ ! -e $LINK ]; then
+        if [ ! -h $LINK ]; then
+            sudo ln -s $TARGET $LINK
+        fi
+    fi
+    
     # true is in different location
     if [ ! -f /bin/true ]; then
         sudo ln -s /usr/bin/true /bin/true
