@@ -232,7 +232,11 @@ agent_param_template = string.Template("""
 LOG=/var/log/contrail.log
 CONFIG=/etc/contrail/vnswad.conf
 prog=/usr/bin/vnswad
-kmod=vrouter/vrouter.ko
+if is_freebsd; then
+  kmod=vrouter/freebsd/vrouter.ko
+else
+  kmod=vrouter/vrouter.ko
+fi
 pname=vnswad
 LIBDIR=/usr/lib64
 VHOST_CFG=/etc/sysconfig/network-scripts/ifcfg-vhost0

@@ -10,4 +10,5 @@ py27-kombu
 py27-lockfile
 py27-mox
 py27-sqlite3
+py27-libvirt
 sudo
