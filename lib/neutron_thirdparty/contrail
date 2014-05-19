@@ -521,16 +521,19 @@ function start_contrail() {
     
     # vrouter
     test_insert_vrouter
-
-    # agent
-    if [ $CONTRAIL_VGW_INTERFACE -a $CONTRAIL_VGW_PUBLIC_SUBNET -a $CONTRAIL_VGW_PUBLIC_NETWORK ]; then
-        sudo sysctl -w net.ipv4.ip_forward=1
-        sudo /opt/stack/contrail/build/debug/vrouter/utils/vif --create vgw --mac 00:01:00:5e:00:00
-        sudo ifconfig vgw up
-        sudo route add -net $CONTRAIL_VGW_PUBLIC_SUBNET dev vgw
+    if ! is_freebsd; then
+        # agent
+        if [ $CONTRAIL_VGW_INTERFACE -a $CONTRAIL_VGW_PUBLIC_SUBNET -a $CONTRAIL_VGW_PUBLIC_NETWORK ]; then
+            sudo sysctl -w net.ipv4.ip_forward=1
+            sudo /opt/stack/contrail/build/debug/vrouter/utils/vif --create vgw --mac 00:01:00:5e:00:00
+            sudo ifconfig vgw up
+            sudo route add -net $CONTRAIL_VGW_PUBLIC_SUBNET dev vgw
+        fi
+    else
+        sudo kldload -n if_tap
+        sudo sysctl net.inet.ip.forwarding=1
     fi
-    source /etc/contrail/agent_param
-    #sudo mkdir -p $(dirname $VROUTER_LOGFILE)
+
     mkdir -p $TOP_DIR/bin
     
     # make a fake contrail-version when contrail isn't installed by yum
@@ -556,22 +559,24 @@ END
     chmod a+x $TOP_DIR/bin/vnsw.hlpr
     screen_it agent "sudo $TOP_DIR/bin/vnsw.hlpr"
 
-    if is_service_enabled q-meta; then
-	# set up a proxy route in contrail from 169.254.169.254:80 to
-	# my metadata server at port 8775
-	python /opt/stack/contrail/controller/src/config/utils/provision_linklocal.py \
-	    --linklocal_service_name metadata \
-	    --linklocal_service_ip 169.254.169.254 \
-	    --linklocal_service_port 80 \
-	    --ipfabric_service_ip $Q_META_DATA_IP \
-	    --ipfabric_service_port 8775 \
-	    --oper add
+    if ! is_freebsd; then
+        if is_service_enabled q-meta; then
+    	# set up a proxy route in contrail from 169.254.169.254:80 to
+    	# my metadata server at port 8775
+    	python /opt/stack/contrail/controller/src/config/utils/provision_linklocal.py \
+    	    --linklocal_service_name metadata \
+    	    --linklocal_service_ip 169.254.169.254 \
+    	    --linklocal_service_port 80 \
+    	    --ipfabric_service_ip $Q_META_DATA_IP \
+    	    --ipfabric_service_port 8775 \
+    	    --oper add
+        fi
+
+        screen_it redis-w "sudo redis-server /etc/contrail/redis-webui.conf"
+
+        screen_it ui-jobs "cd /opt/stack/contrail/contrail-web-core; sudo node jobServerStart.js"
+        screen_it ui-webs "cd /opt/stack/contrail/contrail-web-core; sudo node webServerStart.js"
     fi
-
-    screen_it redis-w "sudo redis-server /etc/contrail/redis-webui.conf"
-
-    screen_it ui-jobs "cd /opt/stack/contrail/contrail-web-core; sudo node jobServerStart.js"
-    screen_it ui-webs "cd /opt/stack/contrail/contrail-web-core; sudo node webServerStart.js"
 
     # restore saved screen settings
     SCREEN_NAME=$SAVED_SCREEN_NAME
