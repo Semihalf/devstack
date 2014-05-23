@@ -241,6 +241,8 @@ class Setup(object):
         gateway = ''
         gateway = self.run_shell("netstat -rn | grep ^\"0.0.0.0\" | grep %s | awk '{ print $2 }'" % dev)
                 # capture = True).strip()
+        if gateway is '':
+            gateway = self.run_shell("netstat -rn | grep ^\"default\" | grep %s | awk '{ print $2 }'" % dev)
         return gateway
 
     #end find_gateway

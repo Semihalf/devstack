@@ -100,6 +100,13 @@ function install_contrail() {
         repo sync
         python third_party/fetch_packages.py
     fi
+    
+    # Remove analytics on freebsd
+    if is_freebsd; then
+        local LOCAL_FILE=$CONTRAIL_SRC/controller/src/SConscript
+        grep -v "analytics\|query_engine" $LOCAL_FILE > /tmp/SConscript
+        mv /tmp/SConscript $LOCAL_FILE
+    fi
 
     # freebsd hack for invalid paths
     if is_freebsd; then
@@ -113,6 +120,12 @@ function install_contrail() {
             if [ ! -h $CONTRAIL_SRC/build/lib/libtbb_debug.so.2 ]; then
                 mkdir -p $CONTRAIL_SRC/build/lib
                 ln -s $CONTRAIL_SRC/build/lib/libtbb_debug.so $CONTRAIL_SRC/build/lib/libtbb_debug.so.2
+            fi
+        fi
+
+        if [ ! -e /etc/redis.conf ]; then
+            if [ ! -h /etc/redis.conf ]; then
+                sudo ln -s /usr/local/etc/redis.conf /etc/redis.conf
             fi
         fi
     fi
@@ -316,6 +329,11 @@ function insert_vrouter() {
 		DEV_MAC=$(cat /sys/class/net/$dev/address)
 	fi
     fi
+    
+    echo "IPADDR=$IPADDR"
+    echo "NETMASK=$NETMASK"
+    echo "DEV_MAC=$DEV_MAC"
+    echo "BROADCAST=$BROADCAST"
 
     # don't die in small memory environments
     if is_freebsd; then
@@ -377,6 +395,7 @@ END { @dns && print(" dns-nameservers ", join(" ", @dns), "\n") }' /etc/resolv.c
 
         echo "Removing address from $EXT_DEV"
         sudo ifconfig $EXT_DEV inet 0.0.0.0
+        sudo ifconfig $EXT_DEV promisc
         sleep 5
 
         echo "Configuring $DEVICE"
@@ -554,7 +573,7 @@ EOF2
     cat > $TOP_DIR/bin/vnsw.hlpr <<END
 #! /bin/bash
 PATH=$TOP_DIR/bin:$PATH
-LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/vnsw/agent/vnswad $VROUTER_LOGFILE $VROUTER_CONFFILE
+LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/vnsw/agent/vnswad $VROUTER_LOGFILE
 END
     chmod a+x $TOP_DIR/bin/vnsw.hlpr
     screen_it agent "sudo $TOP_DIR/bin/vnsw.hlpr"
