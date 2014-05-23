@@ -534,9 +534,6 @@ if [[ -n "$LOGFILE" ]]; then
     find $LOGDIR -maxdepth 1 -name $LOGFILENAME.\* -mtime +$LOGDAYS -exec rm {} \;
     LOGFILE=$LOGFILE.${CURRENT_LOG_TIME}
     SUMFILE=$LOGFILE.${CURRENT_LOG_TIME}.summary
-    
-    echo "LOGFILE=$LOGFILE"
-    echo "SUMFILE=$SUMFILE"
 
     # Redirect output according to config
 
@@ -1028,9 +1025,11 @@ if is_service_enabled neutron; then
     configure_neutron_third_party
     init_neutron_third_party
     start_neutron_third_party
+else
+    if is_service_enabled contrail; then
+        start_contrail
+    fi
 fi
-
-start_contrail
 
 # Nova
 # ----
