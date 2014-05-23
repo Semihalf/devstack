@@ -628,11 +628,36 @@ function stop_contrail() {
         fi
     fi
     sudo pkill redis-server
-    cmd=$(lsmod | grep vrouter)
+
+    # on FreeBSD, shutdown agent
+    if is_freebsd; then
+        sudo killall vnswad
+    fi
+
+    if is_freebsd; then
+        cmd=$(kldstat | grep vrouter)
+    else
+        cmd=$(lsmod | grep vrouter)
+    fi
     if [ $? == 0 ]; then
-        cmd=$(sudo rmmod vrouter)
+        source /etc/contrail/agent_param
+        if is_freebsd; then
+            IPADDR=$(sudo ifconfig vhost0 | awk '/[[:space:]]+inet (.*) netmask (.*) broadcast (.*)$/ { print $2 }')
+            NETMASK=$(sudo ifconfig vhost0 | awk '/[[:space:]]+inet (.*) netmask (.*) broadcast (.*)$/ { print $4 }')
+            GATEWAY=$(sudo netstat -rf inet | awk '/default/ { print $2 }')
+            sudo ifconfig vhost0 0.0.0.0
+            sudo ifconfig vhost0 down
+            sleep 5
+            sudo ifconfig $dev -promisc
+            sudo ifconfig $dev $IPADDR netmask $NETMASK
+            sleep 5
+            echo "sudo route add default $GATEWAY"
+            sudo route add default $GATEWAY
+            cmd=$(sudo kldunload vrouter)
+        else
+            cmd=$(sudo rmmod vrouter)
+        fi
         if [ $? == 0 ]; then
-            source /etc/contrail/agent_param
             if is_ubuntu; then
                 sudo ifdown $dev
                 sudo ifup   $dev
