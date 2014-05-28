@@ -135,10 +135,8 @@ function install_contrail() {
 
     (cd third_party/thrift-*; touch configure.ac README ChangeLog; autoreconf --force --install)
 
-    # workaround: fix icu
+    # build ICU first to prevent using a system one
     if is_freebsd; then
-        rm -rf build/third_party/icu
-        scons -c build/third_party/icu
         scons build/third_party/icu
     fi
 
@@ -395,6 +393,7 @@ END { @dns && print(" dns-nameservers ", join(" ", @dns), "\n") }' /etc/resolv.c
     elif is_freebsd; then
         # Save $EXT_DEV config
         rm -rf resolv.conf
+        
         resolv_conf=$(mktemp resolv.conf)
         cp /etc/resolv.conf $resolv_conf
 
