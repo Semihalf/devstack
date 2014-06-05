@@ -43,6 +43,12 @@ function install_contrail() {
             # service will be started later
             sudo service redis-server stop
         fi
+    elif is_freebsd; then
+	sudo pkg install -y scons flex bison
+	sudo pkg install -y expat gettext curl
+	sudo pkg install -y gcc python autoconf automake libtool
+	sudo pkg install -y libevent libxml2 libxslt
+	sudo pkg install -y redis
     else
 	sudo yum -y install patch scons flex bison make vim
 	sudo yum -y install expat-devel gettext-devel curl-devel
@@ -65,7 +71,10 @@ function install_contrail() {
     sudo pip install gevent geventhttpclient==1.0a thrift
     sudo pip install netifaces fabric argparse
     sudo pip install stevedore xmltodict python-keystoneclient
-    sudo pip install kazoo pyinotify
+    sudo pip install kazoo
+    if ! is_freebsd; then
+        sudo pip install pyinotify
+    fi
     sudo pip install bottle
 
     CONTRAIL_REPO_PROTO=${CONTRAIL_REPO_PROTO:-ssh}
@@ -83,20 +92,69 @@ function install_contrail() {
             sed -i 's/fetch=".."/fetch=\"https:\/\/github.com\/Juniper\/\"/' .repo/manifest.xml
         fi
     fi
+    
+    # install quirks for freebsd
+    if is_freebsd; then
+        mkdir -p $CONTRAIL_SRC/.repo/local_manifests
+        cp $TOP_DIR/contrail/quirks/local_manifests $CONTRAIL_SRC/.repo/local_manifests/local_manifest.xml
+    fi
 
     # If CONTRAIL_REPO_SETUP_SKIP is not set, sync the repo.
     if [ -z $CONTRAIL_REPO_SYNC_SKIP ]; then
         repo sync
         python third_party/fetch_packages.py
     fi
+    
+    # Remove analytics on freebsd
+    if is_freebsd; then
+        local LOCAL_FILE=$CONTRAIL_SRC/controller/src/SConscript
+        grep -v "analytics\|query_engine" $LOCAL_FILE > /tmp/SConscript
+        mv /tmp/SConscript $LOCAL_FILE
+    fi
+
+    # freebsd hack for invalid paths
+    if is_freebsd; then
+        if [ ! -e /usr/include/python2.7 ]; then
+            if [ ! -h /usr/include/python2.7 ]; then
+                sudo ln -s /usr/local/include/python2.7 /usr/include/python2.7
+            fi
+        fi
+
+        if [ ! -e $CONTRAIL_SRC/build/lib/libtbb_debug.so.2 ]; then
+            if [ ! -h $CONTRAIL_SRC/build/lib/libtbb_debug.so.2 ]; then
+                mkdir -p $CONTRAIL_SRC/build/lib
+                ln -s $CONTRAIL_SRC/build/lib/libtbb_debug.so $CONTRAIL_SRC/build/lib/libtbb_debug.so.2
+            fi
+        fi
+
+        if [ ! -e /etc/redis.conf ]; then
+            if [ ! -h /etc/redis.conf ]; then
+                sudo ln -s /usr/local/etc/redis.conf /etc/redis.conf
+            fi
+        fi
+    fi
 
     (cd third_party/thrift-*; touch configure.ac README ChangeLog; autoreconf --force --install)
+
+    # build ICU first to prevent using a system one
+    if is_freebsd; then
+        scons build/third_party/icu
+    fi
+
     scons
+
     cd ${contrail_cwd}
 
     # install contrail modules
     echo "Installing contrail modules"
-    sudo pip install --upgrade $(find $CONTRAIL_SRC/build/debug -name "*.tar.gz" -print)
+    local PIP_INSTALL_FILE_LIST
+    if is_freebsd; then
+        PIP_INSTALL_FILE_LIST=$(find $CONTRAIL_SRC/build/debug -name "*.tar.gz" -print | grep 'sandesh\|vrouter\|control')
+    else
+        PIP_INSTALL_FILE_LIST=$(find $CONTRAIL_SRC/build/debug -name "*.tar.gz" -print)
+    fi
+    echo "PIP_INSTALL_FILE_LIST=$PIP_INSTALL_FILE_LIST"
+    sudo pip install --upgrade $PIP_INSTALL_FILE_LIST
 
     # install VIF driver
     sudo pip install $CONTRAIL_SRC/build/noarch/nova_contrail_vif/dist/nova_contrail_vif*.tar.gz
@@ -135,6 +193,8 @@ function install_contrail() {
 	    # don't start cassandra at boot.  I'll screen_it later
 	    sudo service cassandra stop
 	    sudo update-rc.d -f cassandra remove
+	elif is_freebsd; then
+	    sudo pkg install -y cassandra
 	else
             contrail_cwd=$(pwd)
             cd $CONTRAIL_SRC/third_party
@@ -143,12 +203,18 @@ function install_contrail() {
             cd ${contrail_cwd}
         fi
     fi
-	    
+
+    # FreeBSD might not allow CA which signed below certificates. Make an exception this one time
+    local EXTRA_OPTS=""
+    if is_freebsd; then
+        EXTRA_OPTS="--no-check-certificate"
+    fi
+
     # get ifmap 
     if [ ! -d $CONTRAIL_SRC/third_party/irond-0.3.0-bin ]; then
         contrail_cwd=$(pwd)
         cd $CONTRAIL_SRC/third_party
-        wget -N http://trust.f4.hs-hannover.de/download/iron/archive/irond-0.3.0-bin.zip
+        wget -N http://trust.f4.hs-hannover.de/download/iron/archive/irond-0.3.0-bin.zip $EXTRA_OPTS
         unzip irond-0.3.0-bin.zip
         chmod -w irond-0.3.0-bin/ifmap.properties
         cd ${contrail_cwd}
@@ -157,7 +223,7 @@ function install_contrail() {
     if [ ! -d $CONTRAIL_SRC/third_party/zookeeper-3.4.6 ]; then
         contrail_cwd=$(pwd)
         cd $CONTRAIL_SRC/third_party
-        wget -N http://apache.mirrors.hoobly.com/zookeeper/stable/zookeeper-3.4.6.tar.gz
+        wget -N http://apache.mirrors.hoobly.com/zookeeper/stable/zookeeper-3.4.6.tar.gz $EXTRA_OPTS
         tar xvzf zookeeper-3.4.6.tar.gz
         cd zookeeper-3.4.6
         cp conf/zoo_sample.cfg conf/zoo.cfg
@@ -168,7 +234,7 @@ function install_contrail() {
     if ! python -c 'import ncclient' >/dev/null 2>&1; then
         contrail_cwd=$(pwd)
         cd $CONTRAIL_SRC/third_party
-        wget -N https://code.grnet.gr/attachments/download/1172/ncclient-v0.3.2.tar.gz
+        wget -N https://code.grnet.gr/attachments/download/1172/ncclient-v0.3.2.tar.gz $EXTRA_OPTS
         sudo pip install ncclient-v0.3.2.tar.gz
         cd ${contrail_cwd}
     fi
@@ -178,6 +244,7 @@ function install_contrail() {
     if [ $CONTRAIL_VGW_INTERFACE -a $CONTRAIL_VGW_PUBLIC_SUBNET -a $CONTRAIL_VGW_PUBLIC_NETWORK ]; then
 	    contrail_gw_interface="--vgw_interface $CONTRAIL_VGW_INTERFACE --vgw_public_subnet $CONTRAIL_VGW_PUBLIC_SUBNET --vgw_public_network $CONTRAIL_VGW_PUBLIC_NETWORK"
     fi
+
 
     # create config files
     # export passwords in a subshell so setup_contrail can pick them up but they won't leak later
@@ -192,21 +259,24 @@ function install_contrail() {
         sudo python setup.py install
         cd ${contrail_cwd}
     fi
-    if ! which node > /dev/null 2>&1 ; then
-        wget http://nodejs.org/dist/v0.8.15/node-v0.8.15.tar.gz -O node-v0.8.15.tar.gz
-        tar -xf node-v0.8.15.tar.gz
-        contrail_cwd=$(pwd)
-        cd node-v0.8.15
-        ./configure; make; sudo make install
-        cd ${contrail_cwd}
-        rm -rf node-v0.8.15.tar.gz
-        rm -rf node-v0.8.15
-    fi
-    if [ ! -d $CONTRAIL_SRC/contrail-web-core/node_modules ]; then
-        contrail_cwd=$(pwd)
-        cd $CONTRAIL_SRC/contrail-web-core
-        ./fetch_packages.sh
-        make prod-env
+
+    if ! is_freebsd; then
+        if ! which node > /dev/null 2>&1 ; then
+            wget http://nodejs.org/dist/v0.8.15/node-v0.8.15.tar.gz -O node-v0.8.15.tar.gz
+            tar -xf node-v0.8.15.tar.gz
+            contrail_cwd=$(pwd)
+            cd node-v0.8.15
+            ./configure; make; sudo make install
+            cd ${contrail_cwd}
+            rm -rf node-v0.8.15.tar.gz
+            rm -rf node-v0.8.15
+        fi
+        if [ ! -d $CONTRAIL_SRC/contrail-web-core/node_modules ]; then
+            contrail_cwd=$(pwd)
+            cd $CONTRAIL_SRC/contrail-web-core
+            ./fetch_packages.sh
+            make prod-env
+        fi
     fi
 }
 
@@ -253,15 +323,38 @@ function insert_vrouter() {
 	source $VHOST_CFG
     else
 	DEVICE=vhost0
-	IPADDR=$(sudo ifconfig $EXT_DEV | sed -ne 's/.*inet *addr[: ]*\([0-9.]*\).*/\1/i p')
-	NETMASK=$(sudo ifconfig $EXT_DEV | sed -ne 's/.*mask[: *]\([0-9.]*\).*/\1/i p')
+	if is_freebsd; then
+		IPADDR=$(sudo ifconfig $EXT_DEV | awk '/[[:space:]]+inet (.*) netmask (.*) broadcast (.*)$/ { print $2 }')
+		NETMASK=$(sudo ifconfig $EXT_DEV | awk '/[[:space:]]+inet (.*) netmask (.*) broadcast (.*)$/ { print $4 }')
+		DEV_MAC=$(sudo ifconfig $dev | awk '/[[:space:]]+ether[[:space:]]+.+$/ { print $2 }')
+		BROADCAST=$(sudo ifconfig $dev | awk '/[[:space:]]+inet (.*) netmask (.*) broadcast (.*)$/ { print $6 }')
+		IPDNS=""
+		while read line;  do
+			ip=$(echo $line | awk '/nameserver/ { print $2 }')
+			ips="$ips $ip"
+		done < "/etc/resolv.conf"
+		GATEWAY=$(sudo netstat -rf inet | awk '/default/ { print $2 }')
+	else
+		IPADDR=$(sudo ifconfig $EXT_DEV | sed -ne 's/.*inet *addr[: ]*\([0-9.]*\).*/\1/i p')
+		NETMASK=$(sudo ifconfig $EXT_DEV | sed -ne 's/.*mask[: *]\([0-9.]*\).*/\1/i p')
+		DEV_MAC=$(cat /sys/class/net/$dev/address)
+	fi
     fi
+    
+    echo "IPADDR=$IPADDR"
+    echo "NETMASK=$NETMASK"
+    echo "DEV_MAC=$DEV_MAC"
+    echo "BROADCAST=$BROADCAST"
+
     # don't die in small memory environments
-    sudo insmod $CONTRAIL_SRC/$kmod vr_flow_entries=4096 vr_oflow_entries=512
+    if is_freebsd; then
+        sudo kldload -n $CONTRAIL_SRC/$kmod
+    else
+        sudo insmod $CONTRAIL_SRC/$kmod vr_flow_entries=4096 vr_oflow_entries=512
+    fi
 
     echo "Creating vhost interface: $DEVICE."
     VIF=$CONTRAIL_SRC/build/debug/vrouter/utils/vif
-    DEV_MAC=$(cat /sys/class/net/$dev/address)
     sudo $VIF --create $DEVICE --mac $DEV_MAC \
         || echo "Error creating interface: $DEVICE"
 
@@ -305,6 +398,27 @@ END { @dns && print(" dns-nameservers ", join(" ", @dns), "\n") }' /etc/resolv.c
 	echo "Sleeping 10 seconds to allow link state to settle"
 	sleep 10
 	sudo ifup -i /tmp/interfaces $dev
+    elif is_freebsd; then
+        # Save $EXT_DEV config
+        rm -rf resolv.conf
+        
+        resolv_conf=$(mktemp resolv.conf)
+        cp /etc/resolv.conf $resolv_conf
+
+        echo "Removing address from $EXT_DEV"
+        sudo ifconfig $EXT_DEV inet 0.0.0.0
+        sudo ifconfig $EXT_DEV promisc
+        sleep 5
+
+        echo "Configuring $DEVICE"
+        sudo ifconfig $DEVICE inet $IPADDR netmask $NETMASK broadcast $BROADCAST
+        sudo ifconfig $DEVICE up
+        sudo ifconfig $EXT_DEV up
+        sudo route add default $GATEWAY
+
+        echo "Restoring resolv.conf"
+        sudo cp $resolv_conf /etc/resolv.conf
+        rm -f $resolv_conf
     else
 	echo "Sleeping 10 seconds to allow link state to settle"
 	sudo ifup $DEVICE
@@ -317,11 +431,18 @@ END { @dns && print(" dns-nameservers ", join(" ", @dns), "\n") }' /etc/resolv.c
 
 function test_insert_vrouter ()
 {
-    if lsmod | grep -q vrouter; then 
-	echo "vrouter module already inserted."
+    local LSMOD_CMD
+    if is_freebsd; then
+        LSMOD_CMD=kldstat
     else
-	insert_vrouter
-	echo "vrouter kernel module inserted."
+        LSMOD_CMD=lsmod
+    fi
+
+    if $($LSMOD_CMD | grep -q vrouter); then 
+        echo "vrouter module already inserted."
+    else
+        insert_vrouter
+        echo "vrouter kernel module inserted."
     fi
 }
 
@@ -331,92 +452,119 @@ function pywhere() {
 }
 
 function start_contrail() {
-    # save screen settings
-    SAVED_SCREEN_NAME=$SCREEN_NAME
-    SCREEN_NAME="contrail"
-    screen -d -m -S $SCREEN_NAME -t shell -s /bin/bash
-    sleep 1
-    # Set a reasonable status bar
-    screen -r $SCREEN_NAME -X hardstatus alwayslastline "$SCREEN_HARDSTATUS"
 
-    if is_ubuntu; then
-        REDIS_CONF="/etc/redis/redis.conf"
-    else
-        REDIS_CONF="/etc/redis.conf"
-    fi
+    if ! is_freebsd; then
+        # save screen settings
+        SAVED_SCREEN_NAME=$SCREEN_NAME
+        SCREEN_NAME="contrail"
+        screen -d -m -S $SCREEN_NAME -t shell -s /bin/bash
+        sleep 1
+        # Set a reasonable status bar
+        screen -r $SCREEN_NAME -X hardstatus alwayslastline "$SCREEN_HARDSTATUS"
 
-    # launch ...
-    redis-cli flushall
-    screen_it redis "sudo redis-server $REDIS_CONF"
+        if is_ubuntu; then
+            REDIS_CONF="/etc/redis/redis.conf"
+        else
+            REDIS_CONF="/etc/redis.conf"
+        fi
 
-    screen_it cass "sudo MAX_HEAP_SIZE=$CASS_MAX_HEAP_SIZE HEAP_NEWSIZE=$CASS_HEAP_NEWSIZE cassandra -f"
+        # launch ...
+        redis-cli flushall
+        screen_it redis "sudo redis-server $REDIS_CONF"
 
-    screen_it zk  "cd $CONTRAIL_SRC/third_party/zookeeper-3.4.6; ./bin/zkServer.sh start"
+        screen_it cass "sudo MAX_HEAP_SIZE=$CASS_MAX_HEAP_SIZE HEAP_NEWSIZE=$CASS_HEAP_NEWSIZE cassandra -f"
 
-    screen_it ifmap "cd $CONTRAIL_SRC/third_party/irond-0.3.0-bin; java -jar ./irond.jar"
-    sleep 2
+        screen_it cass "sudo $CASS_PATH -f"
+
+        screen_it ifmap "cd $CONTRAIL_SRC/third_party/irond-0.3.0-bin; java -jar ./irond.jar"
+        sleep 2
+       
     
-    
-    screen_it disco "python $(pywhere discovery)/disc_server_zk.py --reset_config --conf_file /etc/contrail/discovery.conf"
-    sleep 2
+        screen_it disco "python $(pywhere discovery)/disc_server_zk.py --reset_config --conf_file /etc/contrail/discovery.conf"
+        sleep 2
 
-    # find the directory where vnc_cfg_api_server was installed and start vnc_cfg_api_server.py
-    screen_it apiSrv "python $(pywhere vnc_cfg_api_server)/vnc_cfg_api_server.py --conf_file /etc/contrail/api_server.conf --rabbit_password ${RABBIT_PASSWORD} --reset_config"
-    echo "Waiting for api-server to start..."
-    if ! timeout $SERVICE_TIMEOUT sh -c "while ! http_proxy= wget -q -O- http://${SERVICE_HOST}:8082; do sleep 1; done"; then
-        echo "api-server did not start"
-        exit 1
+        # find the directory where vnc_cfg_api_server was installed and start vnc_cfg_api_server.py
+        screen_it apiSrv "python $(pywhere vnc_cfg_api_server)/vnc_cfg_api_server.py --conf_file /etc/contrail/api_server.conf --rabbit_password ${RABBIT_PASSWORD} --reset_config"
+        echo "Waiting for api-server to start..."
+        if ! timeout $SERVICE_TIMEOUT sh -c "while ! http_proxy= wget -q -O- http://${SERVICE_HOST}:8082; do sleep 1; done"; then
+            echo "api-server did not start"
+            exit 1
+        fi
+        sleep 2
+        screen_it schema "python $(pywhere schema_transformer)/to_bgp.py --reset_config --conf_file /etc/contrail/schema_transformer.conf"
+        screen_it svc-mon "python $(pywhere svc_monitor)/svc_monitor.py --reset_config --conf_file /etc/contrail/svc_monitor.conf"
+
+        source /etc/contrail/control_param
+        screen_it control "sudo PATH=$PATH:$TOP_DIR/bin LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/control-node/control-node --IFMAP.server_url https://${IFMAP_SERVER}:${IFMAP_PORT} --IFMAP.user ${IFMAP_USER} --IFMAP.password ${IFMAP_PASWD} --DEFAULT.hostname ${HOSTNAME} --DEFAULT.hostip ${HOSTIP} --DEFAULT.bgp_port ${BGP_PORT} ${CERT_OPTS} ${LOG_LOCAL} --DEFAULT.collectors ${COLLECTOR}:${COLLECTOR_PORT}"
+
+        # collector services
+        # redis-uve
+        screen_it redis-u "sudo redis-server /etc/contrail/redis-uve.conf"
+        sleep 2
+        # redis-query
+        screen_it redis-q "sudo redis-server /etc/contrail/redis-query.conf"
+        sleep 2
+
+        # collector/vizd
+        source /etc/contrail/vizd_param
+        screen_it vizd "sudo PATH=$PATH:$TOP_DIR/bin LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/analytics/vizd --DEFAULT.cassandra_server_list ${CASSANDRA_SERVER_LIST} --DEFAULT.hostip ${HOST_IP} --DEFAULT.log_file /var/log/contrail/collector.log"
+        sleep 2
+
+        source /etc/contrail/opserver_param
+        screen_it opserver "python  $(pywhere opserver)/opserver.py --collectors ${COLLECTORS} --host_ip ${HOST_IP} ${LOG_FILE} ${LOG_LOCAL}"
+        sleep 2
+
+        source /etc/contrail/qed_param
+        screen_it qed "sudo PATH=$PATH:$TOP_DIR/bin LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/query_engine/qed --DEFAULT.collectors ${COLLECTORS} --DEFAULT.cassandra_server_list ${CASSANDRA_SERVER_LIST} --REDIS.server ${REDIS_SERVER} --REDIS.port ${REDIS_SERVER_PORT} --DEFAULT.log_file /var/log/contrail/qe.log --DEFAULT.log_local"
+        sleep 2
+
+        #provision control
+        python /opt/stack/contrail/controller/src/config/utils/provision_control.py --api_server_ip $SERVICE_HOST --api_server_port 8082 --host_name $HOSTNAME --host_ip $HOST_IP
+ 
+        # Provision Vrouter - must be run after API server and schema transformer are up
+        sleep 2
+        admin_user=${CONTRAIL_ADMIN_USERNAME:-"admin"}
+        admin_passwd=${ADMIN_PASSWORD:-"contrail123"}
+        admin_tenant=${CONTRAIL_ADMIN_TENANT:-"admin"}
+        python /opt/stack/contrail/controller/src/config/utils/provision_vrouter.py --host_name $HOSTNAME --host_ip $HOST_IP --api_server_ip $SERVICE_HOST --oper add --admin_user $admin_user --admin_password $admin_passwd --admin_tenant_name $admin_tenant
+
+        # find the directory where vnc_cfg_api_server was installed and start vnc_cfg_api_server.py
+        screen_it apiSrv "python $(pywhere vnc_cfg_api_server)/vnc_cfg_api_server.py --conf_file /etc/contrail/api_server.conf --rabbit_password ${RABBIT_PASSWORD}"
+        echo "Waiting for api-server to start..."
+        if ! timeout $SERVICE_TIMEOUT sh -c "while ! http_proxy= wget -q -O- http://${SERVICE_HOST}:8082; do sleep 1; done"; then
+            echo "api-server did not start"
+            exit 1
+        fi
+        sleep 2
+        screen_it schema "python $(pywhere schema_transformer)/to_bgp.py --reset_config --conf_file /etc/contrail/schema_transformer.conf"
+        screen_it svc-mon "python $(pywhere svc_monitor)/svc_monitor.py --reset_config --conf_file /etc/contrail/svc_monitor.conf"
+
+        source /etc/contrail/control_param
+        screen_it control "export LD_LIBRARY_PATH=/opt/stack/contrail/build/lib; $CONTRAIL_SRC/build/debug/control-node/control-node --IFMAP.server_url https://${IFMAP_SERVER}:${IFMAP_PORT} --IFMAP.user ${IFMAP_USER} --IFMAP.password ${IFMAP_PASWD} --DEFAULT.hostname ${HOSTNAME} --DEFAULT.hostip ${HOSTIP} --DEFAULT.bgp_port ${BGP_PORT} ${CERT_OPTS} ${LOG_LOCAL}"
+
+        # Provision Vrouter - must be run after API server and schema transformer are up
+        sleep 2
+        admin_user=${CONTRAIL_ADMIN_USERNAME:-"admin"}
+        admin_passwd=${ADMIN_PASSWORD:-"contrail123"}
+        admin_tenant=${CONTRAIL_ADMIN_TENANT:-"admin"}
+        python $TOP_DIR/contrail/provision_vrouter.py --host_name $HOSTNAME --host_ip $HOST_IP --api_server_ip $SERVICE_HOST --oper add --admin_user $admin_user --admin_password $admin_passwd --admin_tenant_name $admin_tenant
     fi
-    sleep 2
-    screen_it schema "python $(pywhere schema_transformer)/to_bgp.py --reset_config --conf_file /etc/contrail/schema_transformer.conf"
-    screen_it svc-mon "python $(pywhere svc_monitor)/svc_monitor.py --reset_config --conf_file /etc/contrail/svc_monitor.conf"
-
-    source /etc/contrail/control_param
-    screen_it control "sudo PATH=$PATH:$TOP_DIR/bin LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/control-node/control-node --IFMAP.server_url https://${IFMAP_SERVER}:${IFMAP_PORT} --IFMAP.user ${IFMAP_USER} --IFMAP.password ${IFMAP_PASWD} --DEFAULT.hostname ${HOSTNAME} --DEFAULT.hostip ${HOSTIP} --DEFAULT.bgp_port ${BGP_PORT} ${CERT_OPTS} ${LOG_LOCAL} --DEFAULT.collectors ${COLLECTOR}:${COLLECTOR_PORT}"
-
-    # collector services
-    # redis-uve
-    screen_it redis-u "sudo redis-server /etc/contrail/redis-uve.conf"
-    sleep 2
-    # redis-query
-    screen_it redis-q "sudo redis-server /etc/contrail/redis-query.conf"
-    sleep 2
-
-    # collector/vizd
-    source /etc/contrail/vizd_param
-    screen_it vizd "sudo PATH=$PATH:$TOP_DIR/bin LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/analytics/vizd --DEFAULT.cassandra_server_list ${CASSANDRA_SERVER_LIST} --DEFAULT.hostip ${HOST_IP} --DEFAULT.log_file /var/log/contrail/collector.log"
-    sleep 2
-
-    source /etc/contrail/opserver_param
-    screen_it opserver "python  $(pywhere opserver)/opserver.py --collectors ${COLLECTORS} --host_ip ${HOST_IP} ${LOG_FILE} ${LOG_LOCAL}"
-    sleep 2
-
-    source /etc/contrail/qed_param
-    screen_it qed "sudo PATH=$PATH:$TOP_DIR/bin LD_LIBRARY_PATH=/opt/stack/contrail/build/lib $CONTRAIL_SRC/build/debug/query_engine/qed --DEFAULT.collectors ${COLLECTORS} --DEFAULT.cassandra_server_list ${CASSANDRA_SERVER_LIST} --REDIS.server ${REDIS_SERVER} --REDIS.port ${REDIS_SERVER_PORT} --DEFAULT.log_file /var/log/contrail/qe.log --DEFAULT.log_local"
-    sleep 2
-
-    #provision control
-    python /opt/stack/contrail/controller/src/config/utils/provision_control.py --api_server_ip $SERVICE_HOST --api_server_port 8082 --host_name $HOSTNAME --host_ip $HOST_IP
-
-    # Provision Vrouter - must be run after API server and schema transformer are up
-    sleep 2
-    admin_user=${CONTRAIL_ADMIN_USERNAME:-"admin"}
-    admin_passwd=${ADMIN_PASSWORD:-"contrail123"}
-    admin_tenant=${CONTRAIL_ADMIN_TENANT:-"admin"}
-    python /opt/stack/contrail/controller/src/config/utils/provision_vrouter.py --host_name $HOSTNAME --host_ip $HOST_IP --api_server_ip $SERVICE_HOST --oper add --admin_user $admin_user --admin_password $admin_passwd --admin_tenant_name $admin_tenant
-
+    
     # vrouter
     test_insert_vrouter
-
-    # agent
-    if [ $CONTRAIL_VGW_INTERFACE -a $CONTRAIL_VGW_PUBLIC_SUBNET -a $CONTRAIL_VGW_PUBLIC_NETWORK ]; then
-        sudo sysctl -w net.ipv4.ip_forward=1
-        sudo /opt/stack/contrail/build/debug/vrouter/utils/vif --create vgw --mac 00:01:00:5e:00:00
-        sudo ifconfig vgw up
-        sudo route add -net $CONTRAIL_VGW_PUBLIC_SUBNET dev vgw
+    if ! is_freebsd; then
+        # agent
+        if [ $CONTRAIL_VGW_INTERFACE -a $CONTRAIL_VGW_PUBLIC_SUBNET -a $CONTRAIL_VGW_PUBLIC_NETWORK ]; then
+            sudo sysctl -w net.ipv4.ip_forward=1
+            sudo /opt/stack/contrail/build/debug/vrouter/utils/vif --create vgw --mac 00:01:00:5e:00:00
+            sudo ifconfig vgw up
+            sudo route add -net $CONTRAIL_VGW_PUBLIC_SUBNET dev vgw
+        fi
+    else
+        sudo kldload -n if_tap
+        sudo sysctl net.inet.ip.forwarding=1
     fi
-    source /etc/contrail/agent_param
-    #sudo mkdir -p $(dirname $VROUTER_LOGFILE)
+
     mkdir -p $TOP_DIR/bin
     
     # make a fake contrail-version when contrail isn't installed by yum
@@ -442,22 +590,24 @@ END
     chmod a+x $TOP_DIR/bin/vnsw.hlpr
     screen_it agent "sudo $TOP_DIR/bin/vnsw.hlpr"
 
-    if is_service_enabled q-meta; then
-	# set up a proxy route in contrail from 169.254.169.254:80 to
-	# my metadata server at port 8775
-	python /opt/stack/contrail/controller/src/config/utils/provision_linklocal.py \
-	    --linklocal_service_name metadata \
-	    --linklocal_service_ip 169.254.169.254 \
-	    --linklocal_service_port 80 \
-	    --ipfabric_service_ip $Q_META_DATA_IP \
-	    --ipfabric_service_port 8775 \
-	    --oper add
+    if ! is_freebsd; then
+        if is_service_enabled q-meta; then
+    	# set up a proxy route in contrail from 169.254.169.254:80 to
+    	# my metadata server at port 8775
+    	python /opt/stack/contrail/controller/src/config/utils/provision_linklocal.py \
+    	    --linklocal_service_name metadata \
+    	    --linklocal_service_ip 169.254.169.254 \
+    	    --linklocal_service_port 80 \
+    	    --ipfabric_service_ip $Q_META_DATA_IP \
+    	    --ipfabric_service_port 8775 \
+    	    --oper add
+        fi
+
+        screen_it redis-w "sudo redis-server /etc/contrail/redis-webui.conf"
+
+        screen_it ui-jobs "cd /opt/stack/contrail/contrail-web-core; sudo node jobServerStart.js"
+        screen_it ui-webs "cd /opt/stack/contrail/contrail-web-core; sudo node webServerStart.js"
     fi
-
-    screen_it redis-w "sudo redis-server /etc/contrail/redis-webui.conf"
-
-    screen_it ui-jobs "cd /opt/stack/contrail/contrail-web-core; sudo node jobServerStart.js"
-    screen_it ui-webs "cd /opt/stack/contrail/contrail-web-core; sudo node webServerStart.js"
 
     # restore saved screen settings
     SCREEN_NAME=$SAVED_SCREEN_NAME
@@ -485,11 +635,36 @@ function stop_contrail() {
         fi
     fi
     sudo pkill redis-server
-    cmd=$(lsmod | grep vrouter)
+
+    # on FreeBSD, shutdown agent
+    if is_freebsd; then
+        sudo killall vnswad
+    fi
+
+    if is_freebsd; then
+        cmd=$(kldstat | grep vrouter)
+    else
+        cmd=$(lsmod | grep vrouter)
+    fi
     if [ $? == 0 ]; then
-        cmd=$(sudo rmmod vrouter)
+        source /etc/contrail/agent_param
+        if is_freebsd; then
+            IPADDR=$(sudo ifconfig vhost0 | awk '/[[:space:]]+inet (.*) netmask (.*) broadcast (.*)$/ { print $2 }')
+            NETMASK=$(sudo ifconfig vhost0 | awk '/[[:space:]]+inet (.*) netmask (.*) broadcast (.*)$/ { print $4 }')
+            GATEWAY=$(sudo netstat -rf inet | awk '/default/ { print $2 }')
+            sudo ifconfig vhost0 0.0.0.0
+            sudo ifconfig vhost0 down
+            sleep 5
+            sudo ifconfig $dev -promisc
+            sudo ifconfig $dev $IPADDR netmask $NETMASK
+            sleep 5
+            echo "sudo route add default $GATEWAY"
+            sudo route add default $GATEWAY
+            cmd=$(sudo kldunload vrouter)
+        else
+            cmd=$(sudo rmmod vrouter)
+        fi
         if [ $? == 0 ]; then
-            source /etc/contrail/agent_param
             if is_ubuntu; then
                 sudo ifdown $dev
                 sudo ifup   $dev

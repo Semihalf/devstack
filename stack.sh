@@ -748,6 +748,10 @@ fi
 if is_service_enabled neutron; then
     install_neutron
     install_neutron_third_party
+else
+    if is_service_enabled contrail; then
+        install_contrail
+    fi
 fi
 
 if is_service_enabled nova; then
@@ -1021,8 +1025,11 @@ if is_service_enabled neutron; then
     configure_neutron_third_party
     init_neutron_third_party
     start_neutron_third_party
+else
+    if is_service_enabled contrail; then
+        start_contrail
+    fi
 fi
-
 
 # Nova
 # ----
