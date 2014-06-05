@@ -153,8 +153,8 @@ function restart_rpc_backend {
             elif is_freebsd; then
                 restart_service rabbitmq
                 # Fix cookie access rights for rabbitmq
-		sudo chown rabbitmq /var/db/rabbitmq/.erlang.cookie
-	    fi
+                sudo chown rabbitmq /var/db/rabbitmq/.erlang.cookie
+            fi
             # change the rabbit password since the default is "guest"
             sudo rabbitmqctl change_password guest $RABBIT_PASSWORD && break
             [[ $i -eq "10" ]] && die $LINENO "Failed to set rabbitmq password"

@@ -95,7 +95,8 @@ function install_contrail() {
     
     # install quirks for freebsd
     if is_freebsd; then
-        cp $TOP_DIR/contrail/quirks/local_manifests $CONTRAIL_SRC/.repo/local_manifest.xml
+        mkdir -p $CONTRAIL_SRC/.repo/local_manifests
+        cp $TOP_DIR/contrail/quirks/local_manifests $CONTRAIL_SRC/.repo/local_manifests/local_manifest.xml
     fi
 
     # If CONTRAIL_REPO_SETUP_SKIP is not set, sync the repo.
@@ -202,12 +203,18 @@ function install_contrail() {
             cd ${contrail_cwd}
         fi
     fi
-	    
+
+    # FreeBSD might not allow CA which signed below certificates. Make an exception this one time
+    local EXTRA_OPTS=""
+    if is_freebsd; then
+        EXTRA_OPTS="--no-check-certificate"
+    fi
+
     # get ifmap 
     if [ ! -d $CONTRAIL_SRC/third_party/irond-0.3.0-bin ]; then
         contrail_cwd=$(pwd)
         cd $CONTRAIL_SRC/third_party
-        wget -N http://trust.f4.hs-hannover.de/download/iron/archive/irond-0.3.0-bin.zip --no-check-certificate
+        wget -N http://trust.f4.hs-hannover.de/download/iron/archive/irond-0.3.0-bin.zip $EXTRA_OPTS
         unzip irond-0.3.0-bin.zip
         chmod -w irond-0.3.0-bin/ifmap.properties
         cd ${contrail_cwd}
@@ -216,7 +223,7 @@ function install_contrail() {
     if [ ! -d $CONTRAIL_SRC/third_party/zookeeper-3.4.6 ]; then
         contrail_cwd=$(pwd)
         cd $CONTRAIL_SRC/third_party
-        wget -N http://apache.mirrors.hoobly.com/zookeeper/stable/zookeeper-3.4.6.tar.gz --no-check-certificate
+        wget -N http://apache.mirrors.hoobly.com/zookeeper/stable/zookeeper-3.4.6.tar.gz $EXTRA_OPTS
         tar xvzf zookeeper-3.4.6.tar.gz
         cd zookeeper-3.4.6
         cp conf/zoo_sample.cfg conf/zoo.cfg
@@ -227,7 +234,7 @@ function install_contrail() {
     if ! python -c 'import ncclient' >/dev/null 2>&1; then
         contrail_cwd=$(pwd)
         cd $CONTRAIL_SRC/third_party
-        wget -N https://code.grnet.gr/attachments/download/1172/ncclient-v0.3.2.tar.gz --no-check-certificate
+        wget -N https://code.grnet.gr/attachments/download/1172/ncclient-v0.3.2.tar.gz $EXTRA_OPTS
         sudo pip install ncclient-v0.3.2.tar.gz
         cd ${contrail_cwd}
     fi
@@ -245,14 +252,15 @@ function install_contrail() {
     python $TOP_DIR/contrail/setup_contrail.py --physical_interface=$PHYSICAL_INTERFACE --cfgm_ip $SERVICE_HOST $contrail_gw_interface
     )
 
+    # oslo.config
+    if ! python -c 'import oslo.config' >/dev/null 2>&1; then
+        contrail_cwd=$(pwd)
+        cd /opt/stack/oslo.config
+        sudo python setup.py install
+        cd ${contrail_cwd}
+    fi
+
     if ! is_freebsd; then
-        # oslo.config
-        if ! python -c 'import oslo.config' >/dev/null 2>&1; then
-            contrail_cwd=$(pwd)
-            cd /opt/stack/oslo.config
-            sudo python setup.py install
-            cd ${contrail_cwd}
-        fi
         if ! which node > /dev/null 2>&1 ; then
             wget http://nodejs.org/dist/v0.8.15/node-v0.8.15.tar.gz -O node-v0.8.15.tar.gz
             tar -xf node-v0.8.15.tar.gz

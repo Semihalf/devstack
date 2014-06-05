@@ -79,7 +79,7 @@ if is_freebsd; then
 
     # Fixup gcc locations
     LINK=/bin/gcc
-    TARGET=/usr/local/bin/gcc47
+    TARGET=`ls /usr/local/bin/gcc* | grep -e 'gcc[0-9]*$'`
     if [ ! -e $LINK ]; then
         if [ ! -h $LINK ]; then
             sudo ln -s $TARGET $LINK
@@ -87,7 +87,7 @@ if is_freebsd; then
     fi
 
     LINK=/bin/g++
-    TARGET=/usr/local/bin/g++47
+    TARGET=`ls /usr/local/bin/g++* | grep -e 'g++[0-9]*$'`
     if [ ! -e $LINK ]; then
         if [ ! -h $LINK ]; then
             sudo ln -s $TARGET $LINK
